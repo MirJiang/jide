@@ -1,0 +1,22 @@
+{
+	"name": "@jide/desktop",
+	"version": "0.1.0",
+	"private": true,
+	"dependencies": {
+		"@earendil-works/pi-ai": "0.85.1",
+		"@earendil-works/pi-coding-agent": "0.85.1",
+		"@jide/contracts": "workspace:*",
+		"react": "^19.2.0",
+		"react-dom": "^19.2.0",
+		"zustand": "^5.0.8"
+	},
+	"devDependencies": {
+		"@tailwindcss/vite": "^4.3.3",
+		"@types/bun": "latest",
+		"@types/react": "^19.2.0",
+		"@types/react-dom": "^19.2.0",
+		"@vitejs/plugin-react": "^5.0.0",
+		"tailwindcss": "^4.3.3",
+		"vite": "^7.3.7"
+	}
+}

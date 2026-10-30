@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: unit (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install
+        run: bun install --frozen-lockfile
+      - name: Unit tests (contracts + host)
+        run: bun test packages/contracts apps/desktop
+      - name: Typecheck
+        run: bunx tsc -p packages/contracts && bunx tsc -p apps/desktop --noEmit || true
+
+  # Electrobun 打包冒烟仅在 Windows 跑(hutch 工具链;spike#0 已在本机验证)
+  package-smoke:
+    name: electrobun build smoke (windows)
+    runs-on: windows-latest
+    if: github.event_name == 'push'
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - name: Electrobun prepare + build
+        working-directory: apps/desktop
+        run: |
+          npx electrobun@2.0.5 init --help 2>$null || true
+          hutch electrobun prepare
+          bunx vite build
+          hutch electrobun build

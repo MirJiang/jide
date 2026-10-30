@@ -1,0 +1,18 @@
+{
+	"name": "jide",
+	"private": true,
+	"version": "0.1.0",
+	"description": "JIDE — 自测闭环优先的轻量 Agentic IDE(Electrobun + React + pi 内核)",
+	"workspaces": ["packages/*", "apps/*"],
+	"scripts": {
+		"test": "bun test packages/contracts apps/desktop",
+		"typecheck": "tsc -p packages/contracts && tsc -p apps/desktop",
+		"desktop:prepare": "cd apps/desktop && hutch electrobun prepare",
+		"desktop:view": "cd apps/desktop && bunx vite build",
+		"desktop:dev": "cd apps/desktop && hutch electrobun dev",
+		"desktop:build": "cd apps/desktop && bunx vite build && hutch electrobun build"
+	},
+	"devDependencies": {
+		"typescript": "~5.9.3"
+	}
+}

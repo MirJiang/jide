@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+.hutch/dependencies.lock
+*.tsbuildinfo
+.DS_Store
+Thumbs.db
+spikes/*/node_modules/
+spikes/*/build/
+spikes/*/dist/
+spikes/*/.hutch/
+apps/desktop/.hutch/devkit/
+.env
+.env.*

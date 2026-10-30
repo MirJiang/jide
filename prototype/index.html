@@ -1,0 +1,1559 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JIDE · Agentic IDE 交互原型</title>
+<style>
+/* ============ 设计令牌(暗色 IDE) ============ */
+:root{
+  --bg0:#0e1015; --bg1:#14171f; --bg2:#1a1e29; --bg3:#222735;
+  --line:#262b3a; --line2:#303648;
+  --fg:#d7dbe6; --fg-dim:#8b93a8; --fg-faint:#5c6478;
+  --acc:#6ea8fe; --acc-dim:#3d5a8a;
+  --green:#4ade80; --green-bg:rgba(74,222,128,.12);
+  --red:#f87171; --red-bg:rgba(248,113,113,.12);
+  --yellow:#facc15; --yellow-bg:rgba(250,204,21,.12);
+  --purple:#c4b5fd; --purple-bg:rgba(196,181,253,.12);
+  --orange:#fb923c; --orange-bg:rgba(251,146,60,.12);
+  --mono:"Cascadia Code","JetBrains Mono",Consolas,"Courier New",monospace;
+  --sans:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg0);color:var(--fg);font-family:var(--sans);font-size:13px;min-width:1220px;overflow:auto}
+button{font-family:inherit;font-size:inherit;color:inherit;background:none;border:none;cursor:pointer}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:#2c3242;border-radius:5px;border:2px solid var(--bg1)}
+::-webkit-scrollbar-track{background:transparent}
+.hidden{display:none!important}
+.icon{width:16px;height:16px;flex:none;display:inline-block;vertical-align:-3px}
+.icon.sm{width:13px;height:13px;vertical-align:-2px}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none}
+.mono{font-family:var(--mono)}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes ping{0%{transform:scale(.6);opacity:.9}80%{transform:scale(2.1);opacity:0}100%{opacity:0}}
+@keyframes flash{0%{opacity:.85}100%{opacity:0}}
+@keyframes caret{0%,49%{opacity:1}50%,100%{opacity:0}}
+
+/* ============ 应用骨架 ============ */
+#app{display:flex;flex-direction:column;height:100vh}
+#titlebar{height:44px;flex:none;display:flex;align-items:stretch;justify-content:space-between;background:var(--bg1);border-bottom:1px solid var(--line);padding:0 6px}
+.tb-stat{display:flex;flex-direction:column;justify-content:center;line-height:1.2;padding:0 11px;border-right:1px solid var(--line)}
+.tb-stat .k{font-size:9.5px;color:var(--fg-faint);letter-spacing:.5px}
+.tb-stat .v{font-size:11.5px;color:var(--fg-dim);display:flex;align-items:center;gap:5px;font-weight:500}
+.tb-stat .v b{color:var(--fg);font-weight:500}
+.tb-stat .v .icon{width:12px;height:12px}
+.tb-stat.clickable{cursor:pointer}
+.tb-stat.clickable:hover{background:var(--bg3)}
+.tb-act{display:flex;align-items:center;gap:6px;padding:0 12px;font-size:12px;color:var(--fg-dim);border-right:1px solid var(--line)}
+.tb-act:hover{background:var(--bg3);color:var(--fg)}
+.tb-act .icon{width:14px;height:14px}
+.tb-act.sync .icon{color:var(--orange)}
+.tb-act.sync:hover{color:var(--orange)}
+.tb-act[disabled]{opacity:.45;cursor:not-allowed}
+.pull-n{color:var(--acc);font-family:var(--mono);font-size:11px}
+.tb-left,.tb-right{display:flex;align-items:center;gap:0}
+.tb-left{align-items:stretch}
+.logo{display:flex;align-items:center;gap:6px;font-weight:600;letter-spacing:.5px;padding:0 4px}
+.logo .icon{color:var(--acc);width:17px;height:17px}
+.pill-btn{display:flex;align-items:center;gap:6px;background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:4px 9px;color:var(--fg-dim)}
+.pill-btn:hover{background:var(--bg3);color:var(--fg)}
+.pill-btn b{color:var(--fg);font-weight:500}
+.run-btn{display:flex;align-items:center;gap:7px;background:var(--acc-dim);border:1px solid #4a6db3;border-radius:6px;padding:5px 12px;color:#dbe7ff;font-weight:500}
+.run-btn:hover{background:#456cb8}
+.run-btn .icon{width:13px;height:13px}
+.menu{position:absolute;top:40px;background:var(--bg2);border:1px solid var(--line2);border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.5);padding:5px;z-index:60;min-width:250px;animation:fadeUp .12s ease}
+.menu-item{display:flex;gap:9px;padding:8px 10px;border-radius:6px;width:100%;text-align:left;align-items:flex-start}
+.menu-item:hover{background:var(--bg3)}
+.menu-item .icon{margin-top:1px;color:var(--acc)}
+.menu-item .mi-t{font-weight:500}
+.menu-item .mi-d{color:var(--fg-dim);font-size:12px;margin-top:2px}
+.menu-sep{height:1px;background:var(--line);margin:5px 6px}
+.menu-note{padding:7px 10px;color:var(--fg-faint);font-size:11.5px}
+.menu-note b{color:var(--fg-dim);font-weight:500}
+.git-pill-chip{font-size:10.5px;background:var(--yellow-bg);color:var(--yellow);border-radius:4px;padding:1px 5px;font-family:var(--mono)}
+.menu-commitlog{padding:2px 12px 8px;color:var(--fg-faint);font-size:11px;font-family:var(--mono);line-height:1.9}
+.menu-commitlog b{color:var(--fg-dim);font-weight:500}
+
+/* ============ 评审条目(左侧面板内) ============ */
+.rb-note{margin:10px 12px;color:var(--fg-faint);font-size:11px;line-height:1.65}
+.review-item{margin:8px 10px;background:var(--bg2);border:1px solid var(--line);border-radius:9px;padding:10px 11px;animation:fadeUp .2s ease}
+.review-item[data-state="done"]{opacity:.6}
+.rv-title{font-weight:500;font-size:12.5px}
+.rv-meta{color:var(--fg-faint);font-size:11px;margin:3px 0 8px;font-family:var(--mono)}
+.rv-actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.btn.xs{padding:3px 10px;font-size:11.5px;border-radius:6px}
+.rv-ok{display:inline-flex;align-items:center;gap:5px;color:var(--green);font-size:12px}
+.rv-ok .icon{width:12px;height:12px}
+
+#main{flex:1;display:flex;min-height:0}
+#activitybar,#rail2{width:46px;flex:none;background:var(--bg1);display:flex;flex-direction:column;align-items:center;padding-top:6px;gap:2px}
+#activitybar{border-right:1px solid var(--line)}
+#rail2{border-left:1px solid var(--line)}
+#rightdock{width:290px;flex:none;background:var(--bg1);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+#rightdock.collapsed{display:none}
+.icon-btn{display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:5px;color:var(--fg-faint)}
+.icon-btn:hover{background:var(--bg3);color:var(--fg)}
+.act{width:38px;height:38px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--fg-faint);position:relative}
+.act:hover{color:var(--fg);background:var(--bg2)}
+.act.active{color:var(--acc)}
+.act.active::before{content:"";position:absolute;left:-4px;top:8px;bottom:8px;width:2.5px;background:var(--acc);border-radius:2px}
+.act .badge{position:absolute;top:3px;right:3px;background:var(--acc);color:#0d1420;font-size:10px;font-weight:700;border-radius:8px;padding:0 4px;min-width:15px;text-align:center}
+.act .badge.warn{background:var(--red-bg);color:var(--red);font-weight:600}
+.act .badge.done{background:var(--green-bg);color:var(--green);font-weight:600}
+.act .spot{position:absolute;top:6px;right:6px;width:7px;height:7px;border-radius:50%;background:var(--green)}
+
+#sidebar{width:252px;flex:none;background:var(--bg1);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.side-head{flex:none;height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;color:var(--fg-dim);font-size:11px;letter-spacing:1.5px;font-weight:600}
+.side-body{flex:1;overflow-y:auto;padding-bottom:10px}
+.side-panel{display:none;min-height:100%}
+.side-panel.active{display:block}
+.tree-row{display:flex;align-items:center;gap:6px;padding:3.5px 12px 3.5px 10px;color:var(--fg-dim);cursor:pointer;white-space:nowrap;overflow:hidden}
+.tree-row:hover{background:var(--bg2);color:var(--fg)}
+.tree-row .icon{width:14px;height:14px}
+.tree-row.sel{background:var(--acc-dim);color:#dbe7ff}
+.tree-row .dim{color:var(--fg-faint);font-size:11px;margin-left:auto}
+.tree-group{padding:3.5px 12px 3.5px 8px;color:var(--fg);font-weight:500;display:flex;align-items:center;gap:6px}
+.tree-group .icon{width:14px;height:14px;color:var(--fg-dim)}
+
+/* git 面板 */
+.git-row{display:flex;align-items:center;gap:7px;padding:4px 12px;cursor:pointer;color:var(--fg-dim)}
+.git-row:hover{background:var(--bg2);color:var(--fg)}
+.git-row .icon{width:14px;height:14px}
+.git-chip{margin-left:auto;font-size:11px;font-family:var(--mono)}
+.git-chip.add{color:var(--green)} .git-chip.mod{color:var(--yellow)}
+.commit-log{display:none}
+/* git 提交记录(IDEA 风格图形化日志) */
+.glog{padding:2px 4px 6px}
+.gdate{padding:6px 10px 2px;color:var(--fg-faint);font-size:10.5px;letter-spacing:1px}
+.grow{display:flex;gap:4px;padding:5px 8px 5px 4px;border-radius:7px;cursor:pointer}
+.grow:hover{background:var(--bg2)}
+.ggraph{position:relative;width:16px;flex:none}
+.ggraph::before{content:"";position:absolute;left:7px;top:-6px;bottom:-6px;width:2px;background:var(--line2)}
+.gdot{position:absolute;left:3px;top:5px;width:8px;height:8px;border-radius:50%;border:2px solid var(--bg1);box-shadow:0 0 0 1.5px rgba(0,0,0,.35)}
+.gl1{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.ghash{font-family:var(--mono);font-size:11px;color:var(--yellow)}
+.gref{font-size:9.5px;border-radius:4px;padding:1px 5px}
+.gref.head{background:var(--green-bg);color:var(--green)}
+.gmsg{font-size:12px;color:var(--fg);margin-top:1px;line-height:1.4}
+.gmeta{font-size:10.5px;color:var(--fg-faint);margin-top:1px}
+
+/* 计划面板 */
+.plan-card{margin:8px 10px;background:var(--bg2);border:1px solid var(--line);border-radius:9px;padding:10px 12px}
+.plan-goal{font-weight:500;margin-bottom:2px}
+.plan-sub{color:var(--fg-faint);font-size:11.5px;margin-bottom:9px}
+.plan-step{display:flex;gap:8px;padding:5px 0;color:var(--fg-dim);align-items:flex-start}
+.ps-box{width:15px;height:15px;flex:none;border:1.6px solid var(--fg-faint);border-radius:4px;margin-top:1px;display:flex;align-items:center;justify-content:center}
+.plan-step.doing{color:var(--fg)}
+.plan-step.doing .ps-box{border-color:var(--acc)}
+.plan-step.doing .ps-box::after{content:"";width:7px;height:7px;background:var(--acc);border-radius:2px;animation:pulse 1s infinite}
+.plan-step.done{color:var(--fg-faint)}
+.plan-step.done .ps-box{border-color:var(--green);background:var(--green-bg)}
+.plan-step.done .ps-box .icon{width:10px;height:10px;color:var(--green)}
+.ps-commit{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--green);opacity:.85}
+.plan-foot{padding:6px 12px;color:var(--fg-faint);font-size:11.5px;display:flex;gap:6px;align-items:center}
+.plan-foot .icon{width:13px;height:13px}
+
+/* 记忆面板 */
+.mem-budget{margin:8px 10px 4px;background:var(--bg2);border:1px solid var(--line);border-radius:9px;padding:9px 11px}
+.mem-budget-row{display:flex;justify-content:space-between;align-items:center;font-size:12px}
+.mem-budget-row b{font-family:var(--mono);font-weight:500}
+.mem-bar{height:5px;border-radius:3px;background:#2a3040;margin-top:7px;overflow:hidden}
+.mem-bar>div{height:100%;background:linear-gradient(90deg,var(--acc),var(--purple));border-radius:3px;transition:width .6s ease}
+.mem-breakdown{margin-top:7px;color:var(--fg-faint);font-size:11px;line-height:1.7}
+.mem-tidy{margin:6px 10px;width:calc(100% - 20px);display:flex;align-items:center;justify-content:center;gap:6px;border:1px dashed var(--line2);border-radius:7px;padding:5px;color:var(--fg-dim);font-size:12px}
+.mem-tidy:hover{color:var(--fg);border-color:var(--acc-dim)}
+.mem-item{display:flex;align-items:center;gap:7px;padding:5px 12px;cursor:pointer;color:var(--fg-dim)}
+.mem-item:hover{background:var(--bg2);color:var(--fg)}
+.mem-item.sel{background:var(--bg2);color:var(--fg)}
+.mem-item .icon{width:14px;height:14px}
+.mem-item .scope{font-size:10px;border-radius:4px;padding:1px 5px;flex:none}
+.scope.proj{background:var(--purple-bg);color:var(--purple)}
+.scope.user{background:var(--orange-bg);color:var(--orange)}
+.mem-item .tk{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--fg-faint)}
+.mem-item .newdot{width:6px;height:6px;border-radius:50%;background:var(--green);flex:none}
+.mem-agents{display:flex;align-items:center;gap:7px;padding:7px 12px 3px;color:var(--fg-faint);font-size:11.5px}
+.mem-agents .icon{width:13px;height:13px}
+.mem-detail{margin:8px 10px;background:var(--bg0);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12px;line-height:1.75;color:var(--fg-dim)}
+.mem-detail .md-name{font-family:var(--mono);color:var(--fg);font-size:11.5px}
+.mem-detail .md-src{margin-top:6px;color:var(--fg-faint);font-size:11px}
+
+/* 搜索面板 */
+.search-box{margin:4px 10px 8px;display:flex;align-items:center;gap:7px;background:var(--bg0);border:1px solid var(--line2);border-radius:7px;padding:5px 9px;color:var(--fg-dim)}
+.search-box input{background:none;border:none;outline:none;color:var(--fg);width:100%;font-family:var(--mono);font-size:12px}
+.search-hit{padding:4px 12px;font-size:12px;color:var(--fg-dim);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.search-hit:hover{background:var(--bg2);color:var(--fg)}
+.search-hit .hl{color:var(--yellow)}
+.search-hit .f{font-family:var(--mono);font-size:10.5px;color:var(--fg-faint);display:block}
+
+/* ============ 中列:编辑器 + 底部面板 ============ */
+#center{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--bg0)}
+#edtabs{height:35px;flex:none;display:flex;align-items:stretch;background:var(--bg1);border-bottom:1px solid var(--line);overflow-x:auto}
+.edtab{display:flex;align-items:center;gap:7px;padding:0 14px;color:var(--fg-faint);border-right:1px solid var(--line);white-space:nowrap;position:relative}
+.edtab:hover{color:var(--fg-dim)}
+.edtab.active{background:var(--bg0);color:var(--fg)}
+.edtab.active::after{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:var(--acc)}
+.edtab .icon{width:13px;height:13px}
+.edtab .tag{font-size:10px;border-radius:4px;padding:1px 5px;background:var(--acc-dim);color:#cfe0ff}
+.edtab .dirty{width:7px;height:7px;border-radius:50%;background:var(--yellow)}
+.edtab .dotn{width:7px;height:7px;border-radius:50%;background:var(--green);flex:none}
+#edviews{flex:1;min-height:0;position:relative}
+.edview{position:absolute;inset:0;display:none;overflow:auto}
+.edview.active{display:block}
+
+/* 代码视图 */
+.code-wrap{display:flex;font-family:var(--mono);font-size:12.5px;line-height:1.65;min-height:100%}
+.gutter{flex:none;padding:12px 0;width:52px;text-align:right;color:var(--fg-faint);user-select:none;background:var(--bg0);position:sticky;left:0}
+.gutter div{padding-right:12px}
+.code-body{flex:1;padding:12px 16px;white-space:pre;color:#c8cede}
+.gutter div.mark{background:var(--red-bg);color:var(--red)}
+.gutter div.mark::after{content:"◂";color:var(--red);margin-left:4px}
+.kw{color:#c792ea} .str{color:#a5d6a7} .num{color:#f78c6c} .fn{color:#82aaff}
+.cm{color:#5d6a5d;font-style:italic} .ty{color:#ffcb6b} .op{color:#89ddff}
+.caret-line{display:inline-block;width:2px;height:14px;background:var(--acc);vertical-align:-2px;animation:caret 1s step-end infinite}
+
+/* diff 视图(IDEA 风格) */
+.idiff{display:flex;flex-direction:column;height:100%}
+.idiff-bar{flex:none;display:flex;align-items:center;gap:10px;padding:7px 14px 7px 34px;background:var(--bg1);border-bottom:1px solid var(--line);font-size:12px;color:var(--fg-dim);position:relative}
+.idiff-bar b{color:var(--fg);font-weight:500}
+.istats{display:inline-flex;gap:5px;font-family:var(--mono);font-size:11px}
+.istats .a{color:var(--green);background:var(--green-bg);border-radius:4px;padding:0 5px;font-style:normal}
+.istats .d{color:var(--red);background:var(--red-bg);border-radius:4px;padding:0 5px;font-style:normal}
+.idiff-sub{color:var(--fg-faint);font-size:11.5px}
+.inav{margin-left:auto;display:flex;align-items:center;gap:2px}
+.inav-c{font-family:var(--mono);font-size:11px;color:var(--fg-dim);padding:0 6px}
+.inav-c b{color:var(--fg)}
+.imap{position:absolute;right:8px;top:10px;bottom:10px;width:8px;border-radius:4px;background:var(--bg3);overflow:hidden}
+.imap i{position:absolute;left:1px;right:1px;height:8px;border-radius:3px}
+.idiff-grid{flex:1;overflow:auto;font-family:var(--mono);font-size:12px}
+.irow{display:grid;grid-template-columns:44px 1fr 26px 1fr 44px;align-items:stretch}
+.irow .ln{color:var(--fg-faint);text-align:right;padding:1px 8px 1px 0;user-select:none;background:var(--bg1)}
+.irow .cl{padding:1px 10px;white-space:pre;min-width:0;overflow:hidden;text-overflow:ellipsis;line-height:1.6}
+.irow .cl.ctx{color:#9aa3b8}
+.irow .cl.del{background:rgba(248,113,113,.14)}
+.irow .cl.add{background:rgba(74,222,128,.13)}
+.irow .wd{background:rgba(248,113,113,.30);border-radius:2px;font-style:normal}
+.irow .wa{background:rgba(74,222,128,.28);border-radius:2px;font-style:normal}
+.irow .kw{color:#c792ea}.irow .str{color:#a5d6a7}.irow .num{color:#f78c6c}.irow .cm{color:#5d6a5d}.irow .fn{color:#82aaff}.irow .ty{color:#ffcb6b}.irow .op{color:#89ddff}
+.irow .gut{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;background:var(--bg1)}
+.gb{width:16px;height:14px;display:flex;align-items:center;justify-content:center;color:var(--fg-faint);border-radius:3px}
+.gb:hover{background:var(--acc-dim);color:#dbe7ff}
+.gb .icon{width:11px;height:11px}
+.ifold{display:flex;align-items:center;justify-content:center;gap:8px;padding:4px 0;color:var(--fg-faint);font-size:11px;cursor:pointer;background:var(--bg1);border-top:1px dashed var(--line);border-bottom:1px dashed var(--line)}
+.ifold:hover{color:var(--acc)}
+.flip{transform:scaleX(-1)}
+
+/* 预览视图 */
+.pv-chrome{display:flex;align-items:center;gap:8px;background:var(--bg1);border-bottom:1px solid var(--line);padding:7px 12px}
+.pv-chrome .icon{color:var(--fg-fim)}
+.pv-url{flex:1;max-width:420px;background:var(--bg0);border:1px solid var(--line);border-radius:6px;padding:4px 11px;font-family:var(--mono);font-size:11.5px;color:var(--fg-dim);display:flex;align-items:center;gap:7px}
+.pv-lat{margin-left:auto;color:var(--fg-faint);font-size:11px;font-family:var(--mono)}
+.pv-stage{position:relative;background:#191d27;min-height:100%;display:flex;align-items:flex-start;justify-content:center;padding:28px 0 60px}
+.pv-page{width:400px;background:#fbfaf8;color:#333;font-family:var(--sans);border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.45);overflow:hidden}
+.pv-nav{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #eee}
+.pv-nav .brand{font-weight:700;color:#2c6e49}
+.pv-cartwrap{position:relative;display:flex;align-items:center;gap:6px;color:#555;font-size:13px}
+.pv-cartbadge{position:absolute;top:-8px;right:-12px;background:#e05b5b;color:#fff;border-radius:9px;font-size:10px;padding:1px 5px;min-width:16px;text-align:center}
+.pv-prod{padding:22px 18px;display:flex;gap:16px}
+.pv-img{width:86px;height:86px;border-radius:10px;background:linear-gradient(135deg,#9fd3b8,#5f9e7e);flex:none;display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px}
+.pv-info{flex:1}
+.pv-info h3{font-size:16px;margin-bottom:4px;color:#222}
+.pv-info .price{color:#c0392b;font-weight:700;font-size:15px;margin-bottom:10px}
+.stepper{display:inline-flex;align-items:center;border:1px solid #ccc;border-radius:7px;overflow:hidden}
+.stepper button{width:28px;height:26px;color:#555;font-size:15px}
+.stepper span{width:34px;text-align:center;font-family:var(--mono);color:#333}
+.pv-total{display:flex;justify-content:space-between;align-items:baseline;padding:4px 18px 14px;font-size:13px;color:#666}
+.pv-total .val{font-family:var(--mono);font-size:17px;font-weight:700;color:#222}
+.pv-total .val.bug{color:#c0392b;background:rgba(192,57,43,.08);outline:1.5px dashed rgba(192,57,43,.5);outline-offset:3px;padding:1px 5px}
+.pv-cta{display:block;margin:0 18px 20px;background:#2c6e49;color:#fff;border-radius:9px;padding:11px;font-size:14px;font-weight:600}
+.pv-cta:active{transform:scale(.98)}
+.pv-foot{border-top:1px solid #eee;color:#aaa;font-size:11px;text-align:center;padding:10px}
+.pv-overlay{position:absolute;inset:0;pointer-events:none}
+.pv-click{position:absolute;width:30px;height:30px;margin:-15px 0 0 -15px}
+.pv-click .icon{width:16px;height:16px;color:#ff4d4f;filter:drop-shadow(0 1px 3px rgba(0,0,0,.6))}
+.pv-click::after{content:"";position:absolute;inset:4px;border-radius:50%;border:2px solid #ff4d4f;animation:ping .9s ease-out infinite}
+.pv-ring{position:absolute;border:2px solid var(--yellow);border-radius:5px;box-shadow:0 0 0 300px rgba(0,0,0,.12)}
+.pv-flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
+.pv-flash.go{animation:flash .5s ease-out}
+.pv-shotchip{position:absolute;right:14px;top:12px;background:var(--bg2);border:1px solid var(--line2);border-radius:8px;padding:8px 10px;display:flex;gap:8px;align-items:center;color:var(--fg-dim);font-size:11.5px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+.pv-shotchip .thumb{width:54px;height:36px;border-radius:5px;background:linear-gradient(160deg,#eef2ec 55%,#cfe3d6 55%);border:1px solid var(--line2);position:relative;overflow:hidden}
+.pv-shotchip .thumb::after{content:"";position:absolute;left:8px;top:10px;width:26px;height:5px;background:#9db8a8;border-radius:2px}
+.pv-devtools{position:absolute;left:0;right:0;bottom:0;background:#101319;border-top:1px solid var(--line2);padding:8px 14px;display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:11.5px;color:var(--fg-dim)}
+.pv-devtools .icon{color:var(--purple)}
+.pv-devtools .x{margin-left:auto;color:var(--fg-faint)}
+
+/* ============ 底部面板 ============ */
+#bottom{height:225px;flex:none;border-top:1px solid var(--line);display:flex;flex-direction:column;background:var(--bg0)}
+#btabs{height:32px;flex:none;display:flex;align-items:stretch;background:var(--bg1);border-bottom:1px solid var(--line)}
+.btab{display:flex;align-items:center;gap:7px;padding:0 15px;color:var(--fg-faint);border-right:1px solid var(--line);position:relative}
+.btab:hover{color:var(--fg-dim)}
+.btab.active{color:var(--fg)}
+.btab.active::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--acc)}
+.btab .icon{width:13px;height:13px}
+.btab .cnt{font-size:10.5px;border-radius:8px;padding:0 6px;background:var(--bg3);color:var(--fg-dim)}
+.btab .cnt.bad{background:var(--red-bg);color:var(--red)}
+.btab .cnt.ok{background:var(--green-bg);color:var(--green)}
+#bviews{flex:1;min-height:0;position:relative}
+.bview{position:absolute;inset:0;display:none;overflow:auto}
+.bview.active{display:block}
+
+#termFeed{font-family:var(--mono);font-size:12px;line-height:1.8;padding:10px 14px;color:#aab3c5}
+.tl{white-space:pre-wrap;word-break:break-all}
+.tl .p{color:var(--green)}
+.tl .ok{color:var(--green)} .tl .warn{color:var(--yellow)} .tl .err{color:var(--red)} .tl .dim{color:var(--fg-faint)} .tl .link{color:var(--acc)}
+.ask-btn{display:inline-flex;align-items:center;gap:5px;margin-left:10px;background:var(--acc-dim);border:1px solid #4a6db3;color:#dbe7ff;border-radius:5px;padding:1px 8px;font-size:11px;font-family:var(--sans);vertical-align:1px}
+.ask-btn:hover{background:#456cb8}
+
+.test-toolbar{display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--line);color:var(--fg-dim);font-size:12px}
+.test-toolbar .smart{display:flex;align-items:center;gap:6px;background:var(--purple-bg);color:var(--purple);border-radius:5px;padding:2px 8px;font-size:11.5px}
+.test-toolbar .sum{margin-left:auto;font-family:var(--mono)}
+.test-toolbar .sum .pass{color:var(--green)} .test-toolbar .sum .fail{color:var(--red)}
+.test-row{display:flex;align-items:center;gap:9px;padding:5.5px 14px;font-family:var(--mono);font-size:12px;color:var(--fg-dim);border-bottom:1px solid rgba(38,43,58,.5)}
+.test-row .icon{width:13px;height:13px}
+.test-row.pass .icon{color:var(--green)} .test-row.fail .icon{color:var(--red)} .test-row.run .icon{color:var(--yellow);animation:spin 1s linear infinite}
+.test-row.fail{color:#e8a9a9}
+.test-row .tname{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.test-row .tdet{margin-left:auto;font-size:10.5px;color:var(--fg-faint);white-space:nowrap}
+.test-fail-detail{margin:0 14px 8px;background:var(--red-bg);border:1px solid rgba(248,113,113,.25);border-radius:7px;padding:9px 12px;font-family:var(--mono);font-size:11.5px;line-height:1.8;color:#e8bdb8}
+.test-fail-detail .exp{color:var(--fg)}
+
+.check-row{display:flex;align-items:center;gap:9px;padding:7px 14px;border-bottom:1px solid rgba(38,43,58,.5);color:var(--fg-dim)}
+.check-row .ps-box{width:15px;height:15px;flex:none;border:1.6px solid var(--fg-faint);border-radius:4px;display:flex;align-items:center;justify-content:center}
+.check-row.pass{color:var(--fg)}
+.check-row.pass .ps-box{border-color:var(--green);background:var(--green-bg)}
+.check-row.pass .ps-box .icon{width:10px;height:10px;color:var(--green)}
+.check-row.run .ps-box::after{content:"";width:7px;height:7px;background:var(--yellow);border-radius:2px;animation:pulse .8s infinite}
+.check-row.fail .ps-box{border-color:var(--red)}
+.asset-tag{margin-left:auto;font-size:10.5px;color:var(--purple);background:var(--purple-bg);border-radius:4px;padding:1px 6px}
+.tmp-tag{margin-left:auto;font-size:10.5px;color:var(--fg-faint);background:var(--bg3);border-radius:4px;padding:1px 6px}
+
+/* ============ Agent 聊天(内容区页签) ============ */
+.edview[data-view="chat"]{overflow:hidden}
+.edview.active[data-view="chat"]{display:flex;flex-direction:column}
+.chat-head{flex:none;padding:9px 20px;background:var(--bg1);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+.chat-head .sess{display:flex;align-items:center;gap:6px;font-weight:500}
+.chat-head .model{margin-left:auto;font-size:11px;font-family:var(--mono);color:var(--fg-dim);background:var(--bg2);border:1px solid var(--line);border-radius:5px;padding:2px 7px}
+#agentStatus{flex:none;padding:7px 20px;background:var(--bg1);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:7px;color:var(--fg-dim);font-size:12px}
+#agentStatus .dot{background:var(--fg-faint)}
+#agentStatus.busy .dot{background:var(--green);animation:pulse 1s infinite}
+#stopBtn{margin-left:auto;display:none;align-items:center;gap:5px;border:1px solid var(--red);color:var(--red);border-radius:5px;padding:1px 8px;font-size:11.5px}
+#stopBtn.show{display:inline-flex}
+#stopBtn:hover{background:var(--red-bg)}
+#chatFeed{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:11px}
+.msg{max-width:100%;animation:fadeUp .18s ease}
+.msg.user{align-self:flex-end;background:var(--acc-dim);border:1px solid #4a6db3;color:#e3edff;border-radius:11px 11px 3px 11px;padding:8px 11px;max-width:640px}
+.msg.agent{align-self:flex-start;max-width:840px}
+.msg.agent .body{color:var(--fg);line-height:1.7}
+.msg.agent .who{display:flex;align-items:center;gap:6px;color:var(--acc);font-size:11.5px;margin-bottom:4px}
+.msg.agent .who .icon{width:13px;height:13px}
+.ctx-chip{align-self:flex-end;display:flex;align-items:center;gap:6px;background:var(--bg2);border:1px dashed var(--line2);border-radius:8px;padding:5px 9px;font-family:var(--mono);font-size:11px;color:var(--fg-dim);max-width:88%}
+.ctx-chip .icon{width:12px;height:12px;color:var(--yellow)}
+.toolcard{align-self:flex-start;width:min(880px,100%);background:var(--bg2);border:1px solid var(--line);border-radius:9px;overflow:hidden;animation:fadeUp .18s ease}
+.tc-head{display:flex;align-items:center;gap:8px;padding:8px 11px;cursor:pointer;user-select:none}
+.tc-head:hover{background:var(--bg3)}
+.tc-head .icon{width:14px;height:14px;color:var(--acc)}
+.tc-head .tc-title{font-size:12.5px;color:var(--fg)}
+.tc-head .tc-meta{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:11px;color:var(--fg-faint);font-family:var(--mono)}
+.tc-head .st{display:flex;align-items:center;gap:5px}
+.tc-head .st.run .icon{color:var(--yellow);animation:spin 1s linear infinite}
+.tc-head .st.ok .icon{color:var(--green)}
+.tc-head .st.bad .icon{color:var(--red)}
+.tc-chev{transition:transform .15s;color:var(--fg-faint)}
+.toolcard.open .tc-chev{transform:rotate(90deg)}
+.tc-body{display:none;border-top:1px solid var(--line);padding:9px 12px;font-family:var(--mono);font-size:11.5px;line-height:1.75;color:var(--fg-dim);max-height:180px;overflow:auto;background:var(--bg0)}
+.toolcard.open .tc-body{display:block}
+.tc-diffchip{display:inline-flex;gap:6px;font-family:var(--mono);font-size:11px;border-radius:5px;padding:2px 7px;cursor:pointer;border:1px solid transparent}
+.tc-diffchip .a{color:var(--green)} .tc-diffchip .d{color:var(--red)}
+.tc-diffchip:hover{border-color:var(--line2);background:var(--bg0)}
+.shot{width:132px;border-radius:6px;border:1px solid var(--line2);margin-top:6px;cursor:pointer;position:relative;aspect-ratio:16/10;background:linear-gradient(160deg,#eef2ec 52%,#cfe3d6 52%);overflow:hidden}
+.shot::before{content:"";position:absolute;left:12px;top:14px;width:64px;height:8px;background:#9db8a8;border-radius:2px}
+.shot::after{content:"";position:absolute;left:12px;top:30px;width:96px;height:34px;background:#dce9e1;border-radius:3px}
+.shot .cap{position:absolute;left:0;right:0;bottom:0;background:rgba(10,12,16,.8);color:#cfd6e4;font-family:var(--sans);font-size:10px;padding:3px 8px}
+.memcard{align-self:flex-start;width:min(880px,100%);background:linear-gradient(180deg,rgba(196,181,253,.08),var(--bg2));border:1px solid #4b4370;border-radius:10px;padding:11px 12px;animation:fadeUp .25s ease}
+.memcard .mc-head{display:flex;align-items:center;gap:8px;color:var(--purple);font-weight:500;font-size:12.5px}
+.memcard .mc-head .icon{width:15px;height:15px}
+.memcard .mc-body{margin:9px 0;background:var(--bg0);border:1px solid var(--line);border-radius:7px;padding:9px 11px;font-family:var(--mono);font-size:11.5px;line-height:1.8;color:var(--fg-dim)}
+.memcard .mc-body .f{color:var(--purple)}
+.memcard .mc-actions{display:flex;gap:8px}
+.memcard.adopted .mc-actions,.memcard.skipped .mc-actions{display:none}
+.memcard .mc-state{display:none;align-items:center;gap:6px;font-size:12px}
+.memcard.adopted .mc-state.on{display:flex;color:var(--green)}
+.memcard.skipped .mc-state.on{display:flex;color:var(--fg-faint)}
+.btn{border:1px solid var(--line2);border-radius:7px;padding:5px 13px;color:var(--fg-dim);background:var(--bg2)}
+.btn:hover:not(:disabled){color:var(--fg);border-color:var(--fg-faint)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.primary{background:var(--purple);border-color:var(--purple);color:#171226;font-weight:600}
+.btn.primary:hover:not(:disabled){background:#d3c6fd;border-color:#d3c6fd;color:#171226}
+#presets{flex:none;display:flex;gap:7px;padding:0 20px 10px;flex-wrap:wrap}
+.preset{display:flex;align-items:center;gap:6px;background:var(--bg2);border:1px solid var(--line);border-radius:14px;padding:4px 11px;color:var(--fg-dim);font-size:12px}
+.preset:hover:not(:disabled){border-color:var(--acc-dim);color:#dbe7ff;background:var(--acc-dim)}
+.preset:disabled{opacity:.45;cursor:not-allowed}
+.preset .icon{width:12px;height:12px;color:var(--acc)}
+.chat-input{flex:none;padding:0 20px 16px}
+.chat-input .box{max-width:900px;background:var(--bg0);border:1px solid var(--line2);border-radius:10px;padding:8px 10px;display:flex;flex-direction:column;gap:8px}
+.chat-input textarea{background:none;border:none;outline:none;resize:none;color:var(--fg);font-family:var(--sans);font-size:13px;line-height:1.55;height:40px}
+.chat-input .row{display:flex;align-items:center;gap:8px}
+.chat-input .hint{color:var(--fg-faint);font-size:11px}
+#chatSend{margin-left:auto;display:flex;align-items:center;gap:6px;background:var(--acc-dim);border:1px solid #4a6db3;color:#dbe7ff;border-radius:7px;padding:5px 12px}
+#chatSend:hover:not(:disabled){background:#456cb8}
+#chatSend:disabled{opacity:.4;cursor:not-allowed}
+
+/* ============ 状态栏 ============ */
+#statusbar{height:25px;flex:none;background:var(--bg1);border-top:1px solid var(--line);display:flex;align-items:center;padding:0 10px;gap:16px;color:var(--fg-dim);font-size:11.5px}
+.sb{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.sb .icon{width:12.5px;height:12.5px}
+.sb .dot{width:7px;height:7px}
+.sb .dot.g{background:var(--green)} .sb .dot.y{background:var(--yellow)}
+#sbTrust .icon{color:var(--green)}
+#sbMemory{cursor:pointer}
+#sbMemory .icon{color:var(--purple)}
+.sb-right{margin-left:auto;display:flex;gap:16px;align-items:center}
+.sb .dim{color:var(--fg-faint)}
+
+/* ============ Toast / 引导 ============ */
+#toasts{position:fixed;right:352px;bottom:40px;display:flex;flex-direction:column;gap:8px;z-index:100}
+.toast{display:flex;align-items:center;gap:9px;background:var(--bg2);border:1px solid var(--line2);border-left:3px solid var(--acc);border-radius:8px;padding:9px 14px;box-shadow:0 8px 26px rgba(0,0,0,.5);font-size:12.5px;max-width:380px;animation:fadeUp .2s ease}
+.toast .icon{width:15px;height:15px;color:var(--acc)}
+.toast.ok{border-left-color:var(--green)} .toast.ok .icon{color:var(--green)}
+.toast.warn{border-left-color:var(--yellow)} .toast.warn .icon{color:var(--yellow)}
+#intro{position:fixed;inset:0;background:rgba(8,10,14,.72);z-index:200;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
+.intro-card{width:520px;background:var(--bg1);border:1px solid var(--line2);border-radius:14px;padding:26px 28px;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+.intro-card h2{font-size:17px;display:flex;align-items:center;gap:9px;margin-bottom:6px}
+.intro-card h2 .icon{color:var(--acc);width:19px;height:19px}
+.intro-card .sub{color:var(--fg-dim);font-size:12.5px;margin-bottom:16px;line-height:1.7}
+.intro-step{display:flex;gap:11px;padding:9px 0;border-top:1px solid var(--line)}
+.intro-step .n{width:22px;height:22px;flex:none;border-radius:50%;background:var(--acc-dim);color:#dbe7ff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600}
+.intro-step b{display:block;font-weight:500;margin-bottom:2px}
+.intro-step span{color:var(--fg-dim);font-size:12px;line-height:1.6}
+.intro-card .btn{margin-top:18px;width:100%;padding:9px}
+</style>
+</head>
+<body>
+
+<!-- ============ 图标库(手绘 stroke 风格) ============ -->
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<symbol id="i-spark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z"/><path d="M19 16l.7 2L22 18.7l-2.3.7L19 22l-.7-2.6L16 18.7l2.3-.7L19 16z"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
+<symbol id="i-git" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></symbol>
+<symbol id="i-plan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5.5l1.8 1.8L8.3 3.8"/><path d="M3 12.5l1.8 1.8 3.5-3.5"/><path d="M3 19.5l1.8 1.8 3.5-3.5"/><path d="M12 6h9"/><path d="M12 13h9"/><path d="M12 20h9"/></symbol>
+<symbol id="i-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5A2.5 2.5 0 0 1 4.5 2H11v20H4.5A2.5 2.5 0 0 1 2 19.5V4.5z"/><path d="M22 4.5A2.5 2.5 0 0 0 19.5 2H13v20h6.5a2.5 2.5 0 0 0 2.5-2.5V4.5z"/></symbol>
+<symbol id="i-chev-d" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></symbol>
+<symbol id="i-chev-r" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></symbol>
+<symbol id="i-play" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5.5v13a1 1 0 0 0 1.54.84l10-6.5a1 1 0 0 0 0-1.68l-10-6.5A1 1 0 0 0 8 5.5z"/></symbol>
+<symbol id="i-stop" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="7" y="7" width="10" height="10" rx="1.5"/></symbol>
+<symbol id="i-terminal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-5-6-5"/><path d="M12 19h8"/></symbol>
+<symbol id="i-flask" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.5v6.2L4.7 18.6a2 2 0 0 0 1.8 2.9h11a2 2 0 0 0 1.8-2.9L14 8.7V2.5"/><path d="M8.5 2.5h7"/><path d="M7.2 15h9.6"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></symbol>
+<symbol id="i-check-c" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.2l2.4 2.4 4.6-4.9"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></symbol>
+<symbol id="i-camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></symbol>
+<symbol id="i-pointer" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3.5l7.6 17 2.4-7 7-2.4L4 3.5z"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-3.6 8-10V5.4L12 2.5 4 5.4V12c0 6.4 8 10 8 10z"/><path d="M9 11.5l2 2 4-4.5"/></symbol>
+<symbol id="i-zap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66L21 10"/><path d="M21 3v7h-7"/></symbol>
+<symbol id="i-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></symbol>
+<symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5z"/><path d="M14 3v5h5"/></symbol>
+<symbol id="i-bulb" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5a6.5 6.5 0 0 0-3.7 11.8c.7.5 1.2 1.3 1.2 2.2h5c0-.9.5-1.7 1.2-2.2A6.5 6.5 0 0 0 12 2.5z"/><path d="M9.5 19.5h5"/><path d="M10.5 22h3"/></symbol>
+<symbol id="i-bug" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7h8v6a4 4 0 0 1-8 0V7z"/><path d="M8 8a4 4 0 0 1 8 0"/><path d="M9 3.5L10 6"/><path d="M15 3.5L14 6"/><path d="M4 10h4"/><path d="M16 10h4"/><path d="M5 17l3-2"/><path d="M19 17l-3-2"/><path d="M12 13v4"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+</defs>
+</svg>
+
+<div id="app">
+  <!-- ============ 标题栏 ============ -->
+  <header id="titlebar">
+    <div class="tb-left">
+      <div class="logo"><svg class="icon"><use href="#i-spark"/></svg><span>JIDE</span></div>
+      <div class="tb-stat"><span class="k">项目</span><span class="v"><b>青竹小铺</b></span></div>
+      <div style="position:relative;display:flex;align-items:stretch">
+        <button class="tb-stat clickable" id="wsBtn">
+          <span class="k">工作区</span>
+          <span class="v"><b id="wsLabel">Default (main)</b><svg class="icon" style="width:11px;height:11px;color:var(--fg-faint)"><use href="#i-chev-d"/></svg></span>
+        </button>
+        <div class="menu hidden" id="wsMenu">
+          <button class="menu-item" data-ws="default">
+            <svg class="icon"><use href="#i-folder"/></svg>
+            <span><span class="mi-t">Default · main</span><span class="mi-d">主工作区 · 会话 1 个 · dev :5173</span></span>
+          </button>
+          <button class="menu-item" data-ws="worktree">
+            <svg class="icon"><use href="#i-git"/></svg>
+            <span><span class="mi-t">feat/cart-fix(worktree)<span style="font-size:10px;color:var(--green);background:var(--green-bg);border-radius:4px;padding:1px 5px;margin-left:6px">隔离</span></span><span class="mi-d">基于 main@a1f20c3 · 会话/终端/dev 随工作区切换</span></span>
+          </button>
+          <div class="menu-sep"></div>
+          <div class="menu-note">工作区 = Project 下的 worktree;每个 worktree 独享会话、终端与 dev server 端口(工作区模型)</div>
+        </div>
+      </div>
+      <div class="tb-stat"><span class="k">分支</span><span class="v"><svg class="icon" style="color:var(--green)"><use href="#i-git"/></svg><b id="gitBranchLabel">feat/cart-fix</b></span></div>
+      <div class="tb-stat" title="远程领先/落后"><span class="k">远程</span><span class="v"><svg class="icon" style="color:var(--fg-dim)"><use href="#i-chev-d"/></svg><span class="pull-n" id="pullCount">1</span></span></div>
+      <button class="tb-act sync" id="syncBtn" title="fetch + rebase main"><svg class="icon"><use href="#i-refresh"/></svg>同步</button>
+      <button class="tb-act" id="prBtn" disabled title="当前分支无打开的拉取请求">拉取请求</button>
+      </div>
+      <div class="tb-right">
+      <div style="position:relative">
+        <button class="run-btn" id="runBtn">
+          <svg class="icon"><use href="#i-play"/></svg> 运行
+          <svg class="icon sm"><use href="#i-chev-d"/></svg>
+        </button>
+        <div class="menu hidden" id="runMenu">
+          <button class="menu-item" data-run="agent">
+            <svg class="icon"><use href="#i-spark"/></svg>
+            <span><span class="mi-t">① Agent 自测</span><span class="mi-d">agent 改完自己在后台跑测试 + 浏览器验证,不打扰你</span></span>
+          </button>
+          <button class="menu-item" data-run="human">
+            <svg class="icon"><use href="#i-play"/></svg>
+            <span><span class="mi-t">② 人侧运行 + 预览</span><span class="mi-d">打开内嵌预览,与 agent 共用同一 dev server 与引擎</span></span>
+          </button>
+          <button class="menu-item" data-run="cdp">
+            <svg class="icon"><use href="#i-bug"/></svg>
+            <span><span class="mi-t">③ 调试(CDP 后门)</span><span class="mi-d">附着 CDP;断点调试器为非目标,仅保留协议后门</span></span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div id="main">
+    <!-- ============ 左侧:图标菜单栏(资源导航) ============ -->
+    <nav id="activitybar">
+      <button class="act active" data-act="files" title="资源管理器"><svg class="icon"><use href="#i-folder"/></svg></button>
+      <button class="act" data-act="search" title="搜索"><svg class="icon"><use href="#i-search"/></svg></button>
+      <button class="act" data-act="git" title="源代码管理"><svg class="icon"><use href="#i-git"/></svg><span class="badge" id="gitActBadge">2</span></button>
+      <button class="act" data-act="memory" title="记忆"><svg class="icon"><use href="#i-book"/></svg></button>
+    </nav>
+
+    <!-- ============ 侧栏 ============ -->
+    <aside id="sidebar">
+      <div class="side-head"><span id="sideTitle">资源管理器</span></div>
+      <div class="side-body">
+        <div class="side-panel active" data-panel="files">
+          <div class="tree-group"><svg class="icon"><use href="#i-chev-d"/></svg>src</div>
+          <div class="tree-row sel" data-open="code"><svg class="icon"><use href="#i-file"/></svg>cart.ts<span class="dim mono">M</span></div>
+          <div class="tree-row" data-open="tests"><svg class="icon"><use href="#i-file"/></svg>cart.test.ts</div>
+          <div class="tree-row"><svg class="icon"><use href="#i-file"/></svg>main.ts</div>
+          <div class="tree-group" style="padding-left:14px"><svg class="icon"><use href="#i-folder"/></svg>preview</div>
+          <div class="tree-group"><svg class="icon"><use href="#i-chev-d"/></svg>.memory</div>
+          <div class="tree-row" data-side="memory" style="padding-left:24px"><svg class="icon"><use href="#i-file"/></svg>project.md</div>
+          <div class="tree-row" id="memTreeNew" data-side="memory" style="padding-left:24px;display:none"><svg class="icon"><use href="#i-file"/></svg>conventions.md<span class="dim mono" style="color:var(--green)">新</span></div>
+          <div class="tree-row" data-side="memory" style="padding-left:24px"><svg class="icon"><use href="#i-file"/></svg>feedback.md</div>
+          <div class="tree-row"><svg class="icon" style="color:var(--fg-faint)"><use href="#i-lock"/></svg>AGENTS.md<span class="dim">手写</span></div>
+        </div>
+        <div class="side-panel" data-panel="search">
+          <div class="search-box"><svg class="icon sm"><use href="#i-search"/></svg><input value="lineTotal" spellcheck="false"></div>
+          <div class="search-hit"><span class="hl">lineTotal</span>(sku, qty)<span class="f">src/cart.ts · 第 10 行</span></div>
+          <div class="search-hit">expect(<span class="hl">lineTotal</span>(x, 2))<span class="f">src/cart.test.ts · 第 14 行</span></div>
+          <div class="search-hit">import { <span class="hl">lineTotal</span> }<span class="f">preview/index.html · 内联脚本</span></div>
+        </div>
+        <div class="side-panel" data-panel="memory">
+          <div class="mem-budget">
+            <div class="mem-budget-row"><span>注入预算(三级)</span><b id="memTkLabel">1.8K / 2K</b></div>
+            <div class="mem-bar"><div id="memBar" style="width:90%"></div></div>
+            <div class="mem-breakdown" id="memBreakdown">项目层 1.2K · 用户层 0.4K · 会话层 0.2K</div>
+          </div>
+          <button class="mem-tidy" id="memTidy"><svg class="icon sm"><use href="#i-refresh"/></svg>整理(合并重复 / 遗忘过时)</button>
+          <div class="mem-item sel" data-mem="project">
+            <svg class="icon"><use href="#i-file"/></svg><span>project.md</span><span class="scope proj">项目层</span><span class="tk">1.2K</span>
+          </div>
+          <div class="mem-item" id="memConvRow" data-mem="conv" style="display:none">
+            <span class="newdot"></span><svg class="icon"><use href="#i-file"/></svg><span>conventions.md</span><span class="scope proj">项目层</span><span class="tk">0.15K</span>
+          </div>
+          <div class="mem-item" data-mem="feedback">
+            <svg class="icon"><use href="#i-file"/></svg><span>feedback.md</span><span class="scope user">用户层</span><span class="tk">0.4K</span>
+          </div>
+          <div class="mem-agents"><svg class="icon" style="color:var(--fg-faint)"><use href="#i-lock"/></svg>AGENTS.md — 手写规则,与记忆系统分界</div>
+          <div class="mem-detail" id="memDetail">
+            <div class="md-name">.memory/project/project.md</div>
+            <div style="margin-top:6px">· 技术栈:vite + ts,包管理 pnpm<br>· 测试框架 vitest,命令 `pnpm test`<br>· 金额展示统一保留两位小数</div>
+            <div class="md-src">来源:初始导入 + 会话沉淀 · 最近命中:3 分钟前</div>
+          </div>
+        </div>
+        <div class="side-panel" data-panel="git">
+          <div class="tree-group" style="padding-top:8px"><svg class="icon"><use href="#i-git"/></svg>变更(工作区)</div>
+          <div class="git-row" data-open="diff"><svg class="icon"><use href="#i-file"/></svg>cart.ts<span class="git-chip mod">M +8 −3</span></div>
+          <div class="git-row" id="gitMemRow" style="display:none" data-side="memory"><svg class="icon"><use href="#i-bulb"/></svg>conventions.md<span class="git-chip add">A +9</span></div>
+          <div class="tree-group" style="margin-top:10px"><svg class="icon"><use href="#i-plan"/></svg>提交记录</div>
+          <div class="glog">
+            <div class="gdate">今天</div>
+            <div id="gitNewCommit" style="display:contents"></div>
+            <div class="grow">
+              <div class="ggraph"><span class="gdot" style="background:var(--purple)"></span></div>
+              <div class="gbody">
+                <div class="gl1"><span class="ghash">9c4f7be</span><span class="gref" style="background:var(--purple-bg);color:var(--purple)">feat/cart-fix</span><span class="gref head" id="grefHeadOld">HEAD</span></div>
+                <div class="gmsg">fix(cart): 金额改为分单位整数计算</div>
+                <div class="gmeta">Agent · 计划步骤 2 自动提交 · 12 分钟前</div>
+              </div>
+            </div>
+            <div class="gdate">昨天</div>
+            <div class="grow">
+              <div class="ggraph"><span class="gdot" style="background:var(--acc)"></span></div>
+              <div class="gbody">
+                <div class="gl1"><span class="ghash">7e02b1d</span><span class="gref" style="background:var(--acc-dim);color:#cfe0ff">main</span></div>
+                <div class="gmsg">test: 购物车用例基线</div>
+                <div class="gmeta">你 · 昨天 18:24</div>
+              </div>
+            </div>
+            <div class="grow">
+              <div class="ggraph"><span class="gdot" style="background:var(--acc)"></span></div>
+              <div class="gbody">
+                <div class="gl1"><span class="ghash">a1f20c3</span><span class="gref" style="background:var(--acc-dim);color:#cfe0ff">main</span></div>
+                <div class="gmsg">chore: 初始化预览脚手架</div>
+                <div class="gmeta">你 · 昨天 17:02</div>
+              </div>
+            </div>
+          </div>
+          <div class="rb-note">顶栏「同步」= fetch + rebase main;评审通过后自动并入主线</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ============ 中列 ============ -->
+    <section id="center">
+      <div id="edtabs">
+        <button class="edtab active" data-ed="chat"><svg class="icon" style="color:var(--acc)"><use href="#i-spark"/></svg>Agent 对话</button>
+        <button class="edtab" data-ed="code"><svg class="icon"><use href="#i-file"/></svg>cart.ts<span class="dirty" title="agent 已修改"></span><span class="dotn hidden"></span></button>
+        <button class="edtab" data-ed="diff"><svg class="icon"><use href="#i-git"/></svg>cart.ts <span class="tag">diff 双全文</span><span class="dotn hidden"></span></button>
+        <button class="edtab" data-ed="preview"><svg class="icon"><use href="#i-pointer"/></svg>内嵌预览<span class="tag" style="background:var(--green-bg);color:var(--green)">:5173</span><span class="dotn hidden"></span></button>
+      </div>
+      <div id="edviews">
+        <!-- Agent 对话视图(内容区页签) -->
+        <div class="edview active" data-view="chat" id="chatPanel">
+          <div class="chat-head">
+            <span class="sess"><svg class="icon sm" style="color:var(--acc)"><use href="#i-spark"/></svg><span id="sessionPill">会话:购物车修复</span></span>
+            <span class="model">glm-5.3 · pi 内核</span>
+            <span class="dim" style="margin-left:auto;color:var(--fg-faint);font-size:11.5px">会话随工作区隔离</span>
+          </div>
+          <div id="agentStatus"><span class="dot"></span><span id="agentStatusText">空闲 · 记忆已注入 1.8K</span>
+            <button id="stopBtn"><svg class="icon sm"><use href="#i-stop"/></svg>停止</button>
+          </div>
+          <div id="chatFeed">
+            <div class="msg agent">
+              <div class="who"><svg class="icon"><use href="#i-spark"/></svg>Agent</div>
+              <div class="body">已加载工作区 <b>feat/cart-fix</b> 的上下文:变更 1 个文件,基线测试 48 个。要修复总额的浮点问题吗?我会改完自测 + 浏览器验证后再来汇报。</div>
+            </div>
+          </div>
+          <div id="presets">
+            <button class="preset" data-preset="fix"><svg class="icon"><use href="#i-play"/></svg>修复购物车总额浮点 bug</button>
+            <button class="preset" data-preset="checks"><svg class="icon"><use href="#i-play"/></svg>跑一遍检查项</button>
+          </div>
+          <div class="chat-input">
+            <div class="box">
+              <textarea id="chatInput" placeholder="向 agent 描述任务…(预设按钮有完整演示)" spellcheck="false"></textarea>
+              <div class="row">
+                <span class="hint">Enter 发送</span>
+                <button id="chatSend"><svg class="icon sm"><use href="#i-send"/></svg>发送</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- 代码视图 -->
+        <div class="edview" data-view="code">
+          <div class="code-wrap">
+            <div class="gutter" id="codeGutter"><div>1</div><div>2</div><div>3</div><div>4</div><div>5</div><div>6</div><div>7</div><div>8</div><div>9</div><div class="mark" title="断点:总额计算在此">10</div><div>11</div><div>12</div><div>13</div><div>14</div><div>15</div><div>16</div><div>17</div><div>18</div><div>19</div><div>20</div><div>21</div><div>22</div><div>23</div><div>24</div><div>25</div></div>
+            <div class="code-body"><span class="kw">const</span> PRICES: <span class="ty">Record</span>&lt;<span class="ty">string</span>, <span class="ty">number</span>&gt; = {
+  <span class="str">'xiancao-tea'</span>: <span class="num">29.9</span>,
+  <span class="str">'yunwu-coffee'</span>: <span class="num">33.0</span>,
+};
+
+<span class="cm">// 金额一律以「分」为整数单位存储与计算(记忆 conventions.md)</span>
+<span class="kw">export function</span> <span class="fn">priceCents</span>(sku: <span class="ty">string</span>): <span class="ty">number</span> {
+  <span class="kw">return</span> <span class="ty">Math</span>.<span class="fn">round</span>(PRICES[sku] <span class="op">*</span> <span class="num">100</span>);
+}
+
+<span class="kw">export function</span> <span class="fn">lineTotalCents</span>(sku: <span class="ty">string</span>, qty: <span class="ty">number</span>): <span class="ty">number</span> {
+  <span class="kw">return</span> <span class="fn">priceCents</span>(sku) <span class="op">*</span> qty;<span class="caret-line"></span>
+}
+
+<span class="kw">export function</span> <span class="fn">formatYuan</span>(cents: <span class="ty">number</span>): <span class="ty">string</span> {
+  <span class="kw">return</span> (cents <span class="op">/</span> <span class="num">100</span>).<span class="fn">toFixed</span>(<span class="num">2</span>);
+}
+
+<span class="cm">// —— 旧实现(待 diff 对照)——</span>
+<span class="cm">// export function lineTotal(sku, qty) {</span>
+<span class="cm">//   const total = PRICES[sku] * qty;  // 29.9 × 3 → 89.69999999999999</span>
+<span class="cm">//   return total;</span>
+<span class="cm">// }</span></div>
+          </div>
+        </div>
+        <!-- diff 视图(IDEA 经典:词级高亮 / 变更导航 / 中缝应用 / 定位条 / 上下文折叠) -->
+        <div class="edview" data-view="diff">
+          <div class="idiff">
+            <div class="idiff-bar">
+              <svg class="icon sm" style="color:var(--acc)"><use href="#i-file"/></svg><b>cart.ts</b>
+              <span class="istats"><i class="a">+8</i><i class="d">−3</i></span>
+              <span class="idiff-sub">工作区 ⇄ HEAD · 双全文</span>
+              <div class="inav">
+                <button class="icon-btn" id="dprev" title="上一处变更"><svg class="icon sm flip"><use href="#i-chev-r"/></svg></button>
+                <span class="inav-c"><b id="dcur">1</b>/2</span>
+                <button class="icon-btn" id="dnext" title="下一处变更"><svg class="icon sm"><use href="#i-chev-r"/></svg></button>
+              </div>
+              <span class="imap" aria-hidden="true"><i style="top:24%;background:var(--red)"></i><i style="top:29%;background:var(--green)"></i><i style="top:76%;background:var(--red)"></i><i style="top:81%;background:var(--green)"></i></span>
+            </div>
+            <div class="idiff-grid">
+              <div class="irow"><span class="ln">5</span><span class="cl ctx"></span><span class="gut"></span><span class="cl ctx"></span><span class="ln">5</span></div>
+              <div class="irow" id="hunk1">
+                <span class="ln">6</span>
+                <span class="cl ctx"><span class="kw">export function</span> <i class="wd"><span class="fn">lineTotal</span>(sku, qty)</i> {</span>
+                <span class="gut"><button class="gb" title="应用左侧 → 右侧(演示)"><svg class="icon sm flip"><use href="#i-chev-r"/></svg></button><button class="gb" title="应用右侧 → 左侧(演示)"><svg class="icon sm"><use href="#i-chev-r"/></svg></button></span>
+                <span class="cl ctx"><span class="kw">export function</span> <i class="wa"><span class="fn">priceCents</span>(sku)</i> {</span>
+                <span class="ln">6</span>
+              </div>
+              <div class="irow">
+                <span class="ln">7</span>
+                <span class="cl del">  <span class="kw">const</span> total = <i class="wd">PRICES[sku] <span class="op">*</span> qty</i>;</span>
+                <span class="gut"></span>
+                <span class="cl add">  <span class="kw">return</span> <i class="wa"><span class="ty">Math</span>.<span class="fn">round</span>(PRICES[sku] <span class="op">*</span> <span class="num">100</span>)</i>;</span>
+                <span class="ln">7</span>
+              </div>
+              <div class="irow">
+                <span class="ln">8</span>
+                <span class="cl del">  <i class="wd"><span class="cm">// 浮点直乘:29.9 × 3 → 89.69999999999999</span></i></span>
+                <span class="gut"></span>
+                <span class="cl add">}</span>
+                <span class="ln">8</span>
+              </div>
+              <div class="irow">
+                <span class="ln">9</span>
+                <span class="cl del">  <span class="kw">return</span> total;</span>
+                <span class="gut"></span>
+                <span class="cl add"><span class="kw">export function</span> <span class="fn">lineTotalCents</span>(sku, qty) {</span>
+                <span class="ln">9</span>
+              </div>
+              <div class="irow">
+                <span class="ln">10</span>
+                <span class="cl ctx">}</span>
+                <span class="gut"></span>
+                <span class="cl add">  <span class="kw">return</span> <i class="wa"><span class="fn">priceCents</span>(sku) <span class="op">*</span> qty</i>; <span class="cm">// 整数分</span></span>
+                <span class="ln">10</span>
+              </div>
+              <div class="irow"><span class="ln">11</span><span class="cl ctx"></span><span class="gut"></span><span class="cl add">}</span><span class="ln">11</span></div>
+              <div class="ifold" title="点击展开未更改的上下文(演示)">⋯ 12 个未更改行 ⋯</div>
+              <div class="irow" id="hunk2">
+                <span class="ln">24</span>
+                <span class="cl ctx"><span class="kw">export function</span> <span class="fn">formatYuan</span>(<i class="wd">yuan</i>) {</span>
+                <span class="gut"><button class="gb" title="应用左侧 → 右侧(演示)"><svg class="icon sm flip"><use href="#i-chev-r"/></svg></button><button class="gb" title="应用右侧 → 左侧(演示)"><svg class="icon sm"><use href="#i-chev-r"/></svg></button></span>
+                <span class="cl ctx"><span class="kw">export function</span> <span class="fn">formatYuan</span>(<i class="wa">cents</i>) {</span>
+                <span class="ln">25</span>
+              </div>
+              <div class="irow">
+                <span class="ln">25</span>
+                <span class="cl del">  <span class="kw">return</span> <i class="wd">yuan.<span class="fn">toString</span>()</i>;</span>
+                <span class="gut"></span>
+                <span class="cl add">  <span class="kw">return</span> <i class="wa">(cents <span class="op">/</span> <span class="num">100</span>).<span class="fn">toFixed</span>(<span class="num">2</span>)</i>;</span>
+                <span class="ln">26</span>
+              </div>
+              <div class="irow"><span class="ln">26</span><span class="cl ctx">}</span><span class="gut"></span><span class="cl ctx">}</span><span class="ln">27</span></div>
+            </div>
+          </div>
+        </div>
+        <!-- 预览视图 -->
+        <div class="edview" data-view="preview">
+          <div class="pv-chrome">
+            <button class="icon-btn" title="刷新(与 agent 共用引擎)" onclick="window.__pvRefresh&&window.__pvRefresh()"><svg class="icon" style="color:var(--fg-dim)"><use href="#i-refresh"/></svg></button>
+            <div class="pv-url"><svg class="icon sm" style="color:var(--green)"><use href="#i-shield"/></svg>http://localhost:5173</div>
+            <span class="pv-lat" id="pvLat">latency 23ms · 引擎与 agent 共享</span>
+          </div>
+          <div class="pv-stage">
+            <div class="pv-page" id="pvPage">
+              <div class="pv-nav">
+                <span class="brand">青竹小铺</span>
+                <div class="pv-cartwrap">
+                  <svg class="icon"><use href="#i-book"/></svg>购物车
+                  <span class="pv-cartbadge" id="pvBadge">3</span>
+                </div>
+              </div>
+              <div class="pv-prod">
+                <div class="pv-img">茶</div>
+                <div class="pv-info">
+                  <h3>高山仙草茶 · 120g</h3>
+                  <div class="price">¥29.90</div>
+                  <div class="stepper"><button data-step="-1">−</button><span id="pvQty">3</span><button data-step="1">+</button></div>
+                </div>
+              </div>
+              <div class="pv-total">
+                <span>总计(3 件)</span>
+                <span class="val bug" id="pvTotal">¥89.69999999999999</span>
+              </div>
+              <button class="pv-cta" id="pvAdd">加入购物车</button>
+              <div class="pv-foot">青竹小铺 · 内嵌预览渲染(共享 dev server)</div>
+            </div>
+            <div class="pv-overlay" id="pvOverlay"></div>
+            <div class="pv-flash" id="pvFlash"></div>
+            <div class="pv-devtools hidden" id="pvDevtools">
+              <svg class="icon"><use href="#i-bug"/></svg>CDP 已附着(ws://localhost:9222)· Page.pause / DOM snapshot 可用
+              <span style="color:var(--fg-faint)">断点 UI 为非目标,仅协议后门</span>
+              <button class="x" onclick="document.getElementById('pvDevtools').classList.add('hidden')"><svg class="icon sm"><use href="#i-x"/></svg></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 底部面板 -->
+      <div id="bottom">
+        <div id="btabs">
+          <button class="btab active" data-bt="terminal"><svg class="icon"><use href="#i-terminal"/></svg>终端</button>
+          <button class="btab" data-bt="tests"><svg class="icon"><use href="#i-flask"/></svg>测试<span class="cnt" id="testCnt">12/48</span></button>
+          <button class="btab" data-bt="checks"><svg class="icon"><use href="#i-check-c"/></svg>检查项<span class="cnt" id="checkCnt">0/4</span></button>
+        </div>
+        <div id="bviews">
+          <div class="bview active" data-bv="terminal">
+            <div id="termFeed">
+              <div class="tl"><span class="p">➜</span> <span class="dim">worktree:feat/cart-fix</span> pnpm dev</div>
+              <div class="tl"><span class="ok">✓</span> vite 5.2 · 就绪 412ms — <span class="link">http://localhost:5173</span></div>
+              <div class="tl"><span class="ok">✓</span> 就绪探测(HTTP 模式):GET / → 200 · 轮询 3 次通过</div>
+              <div class="tl"><span class="dim">ℹ dev server 由工作区持有 · agent 与内嵌预览共享同一实例</span></div>
+              <div class="tl" id="termErrLine"><span class="err">✗ [vite] 上一会话遗留:总价渲染 "89.69999999999999" ≠ "89.70"</span><button class="ask-btn" data-ask="term"><svg class="icon sm"><use href="#i-spark"/></svg>问 agent</button></div>
+            </div>
+          </div>
+          <div class="bview" data-bv="tests">
+            <div class="test-toolbar">
+              <span class="smart"><svg class="icon sm"><use href="#i-zap"/></svg>智能选测:12/48 · 基于 git diff 范围</span>
+              <span class="dim" style="color:var(--fg-faint);font-size:11.5px">vitest · 变更文件 cart.ts → 关联用例集</span>
+              <span class="sum" id="testSummary"><span class="pass">通过 11</span> · <span class="fail">失败 1</span></span>
+            </div>
+            <div id="testList">
+              <div class="test-row pass" data-test="1"><svg class="icon"><use href="#i-check-c"/></svg><span class="tname">总额 · 整数数量 ¥29.9 × 1</span><span class="tdet">12ms</span></div>
+              <div class="test-row fail" data-test="2" id="rowFloatTrap"><svg class="icon"><use href="#i-x"/></svg><span class="tname">总额 · 浮点陷阱 29.9 × 3</span><span class="tdet">失败</span></div>
+              <div class="test-fail-detail" id="floatTrapDetail">
+                <div>AssertionError:期望 <span class="exp">"89.70"</span>,实际 <span class="err">"89.69999999999999"</span></div>
+                <div style="color:var(--fg-faint)">at src/cart.test.ts:14 · lineTotal('xiancao-tea', 3)</div>
+                <button class="ask-btn" data-ask="test"><svg class="icon sm"><use href="#i-spark"/></svg>问 agent:这次失败为什么?</button>
+              </div>
+              <div class="test-row pass" data-test="3"><svg class="icon"><use href="#i-check-c"/></svg><span class="tname">优惠券 · 满 50 减 8 叠加</span><span class="tdet">18ms</span></div>
+              <div class="test-row pass" data-test="4"><svg class="icon"><use href="#i-check-c"/></svg><span class="tname">空购物车 · 结算按钮禁用</span><span class="tdet">6ms</span></div>
+              <div class="test-row pass" data-test="5"><svg class="icon"><use href="#i-check-c"/></svg><span class="tname">角标 · 数量与购物车同步</span><span class="tdet">9ms</span></div>
+            </div>
+          </div>
+          <div class="bview" data-bv="checks">
+            <div id="checksList">
+              <div class="check-row" data-check="1"><span class="ps-box"><svg class="icon hidden"><use href="#i-check"/></svg></span><span>购物车总额展示为两位小数</span><span class="asset-tag">项目资产</span></div>
+              <div class="check-row" data-check="2"><span class="ps-box"><svg class="icon hidden"><use href="#i-check"/></svg></span><span>加购后角标与总数一致</span><span class="asset-tag">项目资产</span></div>
+              <div class="check-row" data-check="3"><span class="ps-box"><svg class="icon hidden"><use href="#i-check"/></svg></span><span>控制台无新增错误</span><span class="tmp-tag">临时</span></div>
+              <div class="check-row" data-check="4"><span class="ps-box"><svg class="icon hidden"><use href="#i-check"/></svg></span><span>375px 移动断点布局可用</span><span class="asset-tag">项目资产</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 右侧:工作流停靠面板 + 窄图标菜单(ThinkRail 式) ============ -->
+    <aside id="rightdock">
+      <div class="side-head"><span id="rightTitle">计划 · 当前 todo</span>
+        <button class="icon-btn" id="rightCollapse" title="收起面板"><svg class="icon sm"><use href="#i-chev-r"/></svg></button>
+      </div>
+      <div class="side-body">
+        <div class="side-panel active" data-panel="plan">
+          <div class="plan-card">
+            <div class="plan-goal">修复购物车总额浮点 bug</div>
+            <div class="plan-sub">隔离工作区 feat/cart-fix · 计划 5 步</div>
+            <div id="planSteps">
+              <div class="plan-step" data-step="1"><span class="ps-box"><svg class="icon hidden"><use href="#i-check"/></svg></span><span>定位总额计算逻辑</span></div>
+              <div class="plan-step" data-step="2"><span class="ps-box"><svg class="icon hidden"><use href="#i-check"/></svg></span><span>改为以「分」为单位的整数计算</span></div>
+              <div class="plan-step" data-step="3"><span class="ps-box"><svg class="icon hidden"><use href="#i-check"/></svg></span><span>回归:智能选测</span></div>
+              <div class="plan-step" data-step="4"><span class="ps-box"><svg class="icon hidden"><use href="#i-check"/></svg></span><span>浏览器验证展示正确</span></div>
+              <div class="plan-step" data-step="5"><span class="ps-box"><svg class="icon hidden"><use href="#i-check"/></svg></span><span>沉淀检查项 + 记忆</span></div>
+            </div>
+          </div>
+          <div class="plan-foot"><svg class="icon"><use href="#i-git"/></svg>计划步骤自动提交已开启(仅隔离工作区)</div>
+        </div>
+        <div class="side-panel" data-panel="review" id="reviewPanel">
+          <div class="review-item" data-state="pending" id="rvDiff">
+            <div class="rv-title">cart.ts · 金额计算重构</div>
+            <div class="rv-meta">+8 −3 · 计划步骤 2 自动提交 9c4f7be</div>
+            <div class="rv-actions">
+              <button class="btn xs" data-rv="view">看 diff</button>
+              <button class="btn xs primary" data-rv="approve">通过</button>
+              <button class="btn xs" data-rv="ask">追问</button>
+            </div>
+          </div>
+          <div class="review-item" data-state="pending" id="rvMem">
+            <div class="rv-title">记忆建议 · conventions.md</div>
+            <div class="rv-meta">来源:会话沉淀(建议卡片)</div>
+            <div class="rv-actions">
+              <button class="btn xs primary" data-rv="approve">通过</button>
+              <button class="btn xs" data-rv="ask">追问</button>
+            </div>
+          </div>
+          <div class="review-item" data-state="pending" id="rvChecks" style="display:none">
+            <div class="rv-title">检查项结果 4/4</div>
+            <div class="rv-meta">总额/角标/控制台/移动断点 · 已沉淀为项目资产</div>
+            <div class="rv-actions">
+              <button class="btn xs primary" data-rv="approve">通过</button>
+            </div>
+          </div>
+          <div class="rb-note">自动提交默认留在隔离工作区分支;评审通过后并入主线(人工门禁)</div>
+        </div>
+      </div>
+    </aside>
+    <nav id="rail2">
+      <button class="act active" data-ract="plan" title="计划 · 当前 todo"><svg class="icon"><use href="#i-plan"/></svg><span class="badge hidden" id="planBadge">1/5</span></button>
+      <button class="act" data-ract="review" title="评审队列"><svg class="icon"><use href="#i-check-c"/></svg><span class="badge warn" id="reviewBadge">2</span></button>
+    </nav>
+  </div>
+
+  <!-- ============ 状态栏 ============ -->
+  <footer id="statusbar">
+    <span class="sb" id="sbTrust" title="项目信任门:首次打开工作区需确认信任,方可执行命令与文件写入"><svg class="icon"><use href="#i-shield"/></svg>已信任</span>
+    <span class="sb dim">worktree ../jide-feat-cart-fix</span>
+    <span class="sb-right">
+      <span class="sb" id="sbServer" title="dev server 管理属工作区 · 就绪探测三模式:HTTP / 端口 / 日志"><span class="dot g"></span>dev :5173 · HTTP 200</span>
+      <span class="sb" id="sbAgent"><span class="dot" id="sbAgentDot" style="background:var(--fg-faint)"></span><span id="sbAgentText">agent 空闲</span></span>
+      <span class="sb" id="sbMemory" title="三级注入:项目层 1.2K · 用户层 0.4K · 会话层 0.2K(上限 2K)"><svg class="icon"><use href="#i-bulb"/></svg><span id="sbMemoryText">记忆 1.8K / 2K</span></span>
+      <span class="sb dim">Electrobun · 原型 v0.1</span>
+    </span>
+  </footer>
+</div>
+
+<div id="toasts"></div>
+
+<!-- ============ 引导层 ============ -->
+<div id="intro">
+  <div class="intro-card">
+    <h2><svg class="icon"><use href="#i-spark"/></svg>JIDE 交互原型 · 评审引导</h2>
+    <div class="sub">本原型演示业务设计中的三大支柱与关键交互,全部数据为脚本模拟,不含真实执行。建议按顺序体验:</div>
+    <div class="intro-step"><span class="n">1</span><div><b>自测闭环(差异化核心)</b><span>在中间「Agent 对话」页签点「修复购物车总额浮点 bug」:观察计划推进 → diff 双全文 → 智能选测 → 浏览器自动化(点击/截图)→ 检查项沉淀 → 记忆建议卡片;后台变更的页签会打绿点。</span></div></div>
+    <div class="intro-step"><span class="n">2</span><div><b>评审与 Git</b><span>agent 的自动提交与记忆建议进入右侧「评审队列」等你确认(通过 / 追问),右侧窄菜单在 计划/评审 间切换并可收起;顶栏是分离的 Git 状态条(项目/工作区/分支/远程)+ 独立的「同步」「拉取请求」按钮;变更明细在左侧「源代码管理」。</span></div></div>
+    <div class="intro-step"><span class="n">3</span><div><b>隔离工作区 + 运行三档</b><span>顶栏切换 Default ⇄ worktree;右上「运行」三档(Agent 自测 / 人侧预览 / CDP 后门);测试失败「问 agent」;侧栏「记忆」看预算与整理。</span></div></div>
+    <button class="btn primary" id="introClose">开始评审</button>
+  </div>
+</div>
+
+<script>
+/* ================================================================
+   JIDE 交互原型 — 全部为前端脚本模拟,无真实执行
+   ================================================================ */
+const $  = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+let BUSY = false, ABORT = false;
+const S = { ws:'worktree', fixed:false, checksRun:false, memAdopted:false, tidyDone:false, testsRun:0 };
+
+/* ---------- 通用 UI ---------- */
+function toast(text, kind='info'){
+  const icons = {info:'i-spark', ok:'i-check-c', warn:'i-bulb'};
+  const el = document.createElement('div');
+  el.className = 'toast' + (kind==='ok'?' ok':kind==='warn'?' warn':'');
+  el.innerHTML = `<svg class="icon"><use href="#${icons[kind]||'i-spark'}"/></svg><span>${text}</span>`;
+  $('#toasts').appendChild(el);
+  setTimeout(()=>{ el.style.transition='opacity .4s'; el.style.opacity='0'; setTimeout(()=>el.remove(),400); }, 3600);
+}
+function setBusy(b){
+  BUSY = b;
+  $$('.preset').forEach(x=>x.disabled=b);
+  $('#chatSend').disabled = b;
+  $('#stopBtn').classList.toggle('show', b);
+  $('#agentStatus').classList.toggle('busy', b);
+  $('#sbAgentDot').style.background = b ? 'var(--green)' : 'var(--fg-faint)';
+  $('#sbAgentText').textContent = b ? 'agent 运行中' : 'agent 空闲';
+}
+const chk = () => { if (ABORT) throw 'aborted'; };
+
+/* ---------- 侧栏 / 编辑器 / 底部 切换 ---------- */
+const SIDE_TITLES = {files:'资源管理器', search:'搜索', git:'源代码管理', memory:'记忆'};
+function setSide(act){
+  $$('#activitybar .act').forEach(b=>b.classList.toggle('active', b.dataset.act===act));
+  $$('#sidebar .side-panel').forEach(p=>p.classList.toggle('active', p.dataset.panel===act));
+  $('#sideTitle').textContent = SIDE_TITLES[act] || act;
+}
+$$('#activitybar .act').forEach(b=>b.onclick=()=>setSide(b.dataset.act));
+
+/* 右侧窄菜单:计划 / 评审(工作流停靠面板) */
+const RIGHT_TITLES = {plan:'计划 · 当前 todo', review:'评审队列'};
+function setRight(act){
+  $('#rightdock').classList.remove('collapsed');
+  $$('#rail2 .act').forEach(b=>b.classList.toggle('active', b.dataset.ract===act));
+  $$('#rightdock .side-panel').forEach(p=>p.classList.toggle('active', p.dataset.panel===act));
+  $('#rightTitle').textContent = RIGHT_TITLES[act] || act;
+}
+$$('#rail2 .act').forEach(b=>b.onclick=()=>{
+  const a = b.dataset.ract;
+  if (b.classList.contains('active') && !$('#rightdock').classList.contains('collapsed')){
+    $('#rightdock').classList.add('collapsed');
+  } else setRight(a);
+});
+$('#rightCollapse').onclick = ()=>$('#rightdock').classList.add('collapsed');
+$$('[data-side="memory"]').forEach(r=>r.onclick=()=>setSide('memory'));
+
+function setEd(tab){
+  $$('.edtab').forEach(t=>t.classList.toggle('active', t.dataset.ed===tab));
+  const dn = document.querySelector(`.edtab[data-ed="${tab}"] .dotn`);
+  if (dn) dn.classList.add('hidden');
+  $$('.edview').forEach(v=>v.classList.toggle('active', v.dataset.view===tab));
+}
+/* 后台变更的页签打小绿点(切到该页签即清除) */
+function pokeTab(name){
+  const dn = document.querySelector(`.edtab[data-ed="${name}"] .dotn`);
+  if (dn) dn.classList.remove('hidden');
+}
+$$('.edtab').forEach(t=>t.onclick=()=>setEd(t.dataset.ed));
+$$('[data-open]').forEach(r=>r.onclick=()=>{
+  const m = r.dataset.open;
+  if (m==='code') setEd('code');
+  if (m==='diff') setEd('diff');
+  if (m==='tests') setBottom('tests');
+});
+function setBottom(tab){
+  $$('.btab').forEach(t=>t.classList.toggle('active', t.dataset.bt===tab));
+  $$('.bview').forEach(v=>v.classList.toggle('active', v.dataset.bv===tab));
+}
+$$('.btab').forEach(t=>t.onclick=()=>setBottom(t.dataset.bt));
+
+/* IDEA 式 diff:变更导航 / 中缝应用 / 上下文折叠 */
+(() => {
+  const hunks = ['hunk1','hunk2'];
+  let cur = 0;
+  const show = i => {
+    cur = (i + hunks.length) % hunks.length;
+    $('#dcur').textContent = cur + 1;
+    document.getElementById(hunks[cur])?.scrollIntoView({block:'center',behavior:'smooth'});
+  };
+  $('#dnext').onclick = () => show(cur + 1);
+  $('#dprev').onclick = () => show(cur - 1);
+  $$('.gb').forEach(b => b.onclick = e => { e.stopPropagation(); toast('演示:已把所选侧内容应用到另一侧(方向应用)'); });
+  const fold = document.querySelector('.ifold');
+  if (fold) fold.onclick = () => toast('演示:展开 12 行未更改上下文');
+})();
+
+/* ---------- 菜单(工作区 / 运行) ---------- */
+function bindMenu(btn, menu){
+  btn.onclick = e => { e.stopPropagation(); menu.classList.toggle('hidden'); };
+}
+bindMenu($('#wsBtn'), $('#wsMenu'));
+bindMenu($('#runBtn'), $('#runMenu'));
+function setGitBranch(b){ $('#gitBranchLabel').textContent = b; }
+$('#syncBtn').onclick = ()=>{
+  $('#pullCount').textContent = '0';
+  toast('已同步:fetch + rebase main · 无冲突','ok');
+  term(`<span class="ok">✓</span> git fetch --all && git rebase main · <span class="dim">无新提交,无冲突</span>`);
+};
+document.addEventListener('click', ()=>{ $('#wsMenu').classList.add('hidden'); $('#runMenu').classList.add('hidden'); });
+$$('.menu-item').forEach(m=>m.addEventListener('click', e=>e.stopPropagation()));
+
+/* 工作区切换(隔离工作区支柱) */
+$$('#wsMenu .menu-item').forEach(m=>m.onclick=()=>{
+  const ws = m.dataset.ws;
+  if (ws === S.ws) return;
+  S.ws = ws;
+  $('#wsMenu').classList.add('hidden');
+  if (ws === 'default'){
+    $('#wsLabel').textContent = 'Default (main)';
+    setGitBranch('main');
+    $('#sessionPill').textContent = '会话:脚手架初始化';
+    toast('已切回主工作区 · 会话/终端/dev 端口随之切换','ok');
+    term(`<span class="ok">✓</span> 卸载 worktree dev :5174 · 挂载主工作区 dev :5173`);
+  } else {
+    $('#wsLabel').textContent = 'feat/cart-fix (worktree)';
+    setGitBranch('feat/cart-fix');
+    $('#sessionPill').textContent = '会话:购物车修复';
+    toast('已切换到隔离工作区 feat/cart-fix(基于 main@a1f20c3)','ok');
+    term(`<span class="ok">✓</span> 挂载 worktree ../jide-feat-cart-fix · dev :5174 · 会话与终端已随工作区切换`);
+  }
+});
+
+/* 运行三档 */
+$$('#runMenu .menu-item').forEach(m=>m.onclick=async ()=>{
+  const mode = m.dataset.run;
+  $('#runMenu').classList.add('hidden');
+  if (mode==='agent'){
+    toast('① Agent 自测:后台执行测试 + 浏览器验证,不打扰当前视图');
+    await runSilentSelfTest();
+  } else if (mode==='human'){
+    toast('② 人侧运行:打开内嵌预览(与 agent 共用 dev server 与引擎)','ok');
+    setEd('preview');
+    term(`<span class="ok">✓</span> 人侧运行 · dev server 已就绪(HTTP 探测 200)· 内嵌预览已打开`);
+    window.__pvRefresh && window.__pvRefresh();
+  } else {
+    toast('③ 调试:CDP 后门附着(断点调试器为非目标)','warn');
+    setEd('preview');
+    $('#pvDevtools').classList.remove('hidden');
+    term(`<span class="ok">✓</span> CDP 附着 ws://localhost:9222 · Page.pause / DOM snapshot 可用`);
+  }
+});
+
+/* ---------- 终端 ---------- */
+function term(html){
+  const el = document.createElement('div');
+  el.className = 'tl';
+  el.innerHTML = html;
+  $('#termFeed').appendChild(el);
+  $('#termFeed').scrollTop = 1e9;
+}
+
+/* ---------- 预览页交互 ---------- */
+function pvUpdateTotal(){
+  const qty = +$('#pvQty').textContent;
+  const cents = 2990 * qty;
+  $('#pvTotal').textContent = S.fixed ? '¥' + (cents/100).toFixed(2) : '¥' + (29.9 * qty);
+  $('#pvTotal').classList.toggle('bug', !S.fixed);
+  $('#pvTotal').parentElement.querySelector('span:first-child').textContent = `总计(${qty} 件)`;
+}
+$$('.stepper button').forEach(b=>b.onclick=()=>{ if(BUSY&&!S.fixed) return;
+  const q = +$('#pvQty').textContent + (+b.dataset.step);
+  if (q<1) return;
+  $('#pvQty').textContent = q; pvUpdateTotal();
+});
+$('#pvAdd').onclick = ()=>{
+  $('#pvBadge').textContent = +$('#pvBadge').textContent + (+$('#pvQty').textContent);
+  toast('加入购物车 · 角标已同步','ok');
+};
+window.__pvRefresh = ()=>{
+  const f = $('#pvFlash'); f.classList.remove('go'); void f.offsetWidth; f.classList.add('go');
+  pvUpdateTotal();
+};
+
+/* ---------- 聊天渲染 ---------- */
+const feed = $('#chatFeed');
+function scrollFeed(){ feed.scrollTop = feed.scrollHeight; }
+function pushUser(text){
+  const el = document.createElement('div');
+  el.className = 'msg user'; el.textContent = text;
+  feed.appendChild(el); scrollFeed();
+}
+function pushCtxChip(text){
+  const el = document.createElement('div');
+  el.className = 'ctx-chip';
+  el.innerHTML = `<svg class="icon"><use href="#i-file"/></svg><span>${text}</span>`;
+  feed.appendChild(el); scrollFeed();
+}
+function agentBubble(){
+  const el = document.createElement('div');
+  el.className = 'msg agent';
+  el.innerHTML = `<div class="who"><svg class="icon"><use href="#i-spark"/></svg>Agent</div><div class="body"></div>`;
+  feed.appendChild(el); scrollFeed();
+  return el.querySelector('.body');
+}
+async function typeInto(el, text, speed=16){
+  for (const ch of text){
+    chk();
+    el.textContent += ch;
+    if ((el.textContent.length % 3)===0) scrollFeed();
+    await sleep(speed);
+  }
+  scrollFeed();
+}
+/* 工具卡:head 可点开详情 */
+function toolCard({icon, title, meta, body}){
+  const el = document.createElement('div');
+  el.className = 'toolcard';
+  el.innerHTML = `
+    <div class="tc-head">
+      <svg class="icon"><use href="#${icon}"/></svg>
+      <span class="tc-title">${title}</span>
+      <span class="tc-meta">${meta||''}
+        <span class="st run"><svg class="icon sm"><use href="#i-refresh"/></svg></span>
+        <svg class="icon sm tc-chev"><use href="#i-chev-r"/></svg>
+      </span>
+    </div>
+    <div class="tc-body">${body||''}</div>`;
+  el.querySelector('.tc-head').onclick = ()=>el.classList.toggle('open');
+  feed.appendChild(el); scrollFeed();
+  const st = el.querySelector('.st');
+  return {
+    el,
+    ok(msg){ st.className='st ok'; st.innerHTML=`<svg class="icon sm"><use href="#i-check"/></svg>${msg||''}`; },
+    bad(msg){ st.className='st bad'; st.innerHTML=`<svg class="icon sm"><use href="#i-x"/></svg>${msg||''}`; },
+  };
+}
+function diffChip(){ /* 点击跳 diff 的行内胶囊 */
+  const el = document.createElement('span');
+  el.className = 'tc-diffchip';
+  el.innerHTML = `<span class="a">+8</span><span class="d">−3</span>`;
+  el.title = '查看双全文 diff';
+  el.onclick = e => { e.stopPropagation(); setEd('diff'); };
+  return el;
+}
+
+/* ---------- 计划推进 ---------- */
+function planGo(step){
+  const row = $(`.plan-step[data-step="${step}"]`);
+  row.classList.add('doing');
+  $('#planBadge').classList.remove('hidden');
+  $('#planBadge').textContent = `${step}/5`;
+}
+function planDone(step, commit){
+  const row = $(`.plan-step[data-step="${step}"]`);
+  row.classList.remove('doing'); row.classList.add('done');
+  row.querySelector('.icon').classList.remove('hidden');
+  if (commit){
+    const c = document.createElement('span');
+    c.className = 'ps-commit'; c.textContent = commit;
+    row.appendChild(c);
+  }
+}
+
+/* ---------- 测试面板 ---------- */
+function resetTests(){
+  $$('#testList .test-row').forEach(r=>{
+    r.className='test-row pass';
+    r.querySelector('.icon').innerHTML='<use href="#i-check-c"/>';
+    r.querySelector('.tdet').textContent='—';
+  });
+  $('#rowFloatTrap').className='test-row fail';
+  $('#rowFloatTrap').querySelector('.icon').innerHTML='<use href="#i-x"/>';
+  $('#floatTrapDetail').classList.remove('hidden');
+  $('#testSummary').innerHTML = `<span class="pass">通过 11</span> · <span class="fail">失败 1</span>`;
+  $('#testCnt').textContent='12/48'; $('#testCnt').className='cnt bad';
+}
+async function animateTests(){
+  const rows = $$('#testList .test-row');
+  $('#floatTrapDetail').classList.add('hidden');
+  let pass=0, fail=0;
+  for (const r of rows){
+    chk();
+    r.className='test-row run';
+    r.querySelector('.icon').innerHTML = '<use href="#i-refresh"/>';
+    r.querySelector('.tdet').textContent='运行中';
+    await sleep(260);
+    const isFail = r.dataset.test==='2' && !S.fixed;
+    r.className = 'test-row ' + (isFail?'fail':'pass');
+    r.querySelector('.icon').innerHTML = `<use href="#${isFail?'i-x':'i-check-c'}"/>`;
+    isFail ? fail++ : pass++;
+    r.querySelector('.tdet').textContent = isFail ? '失败' : (8+Math.floor(Math.random()*14))+'ms';
+    $('#testSummary').innerHTML = `<span class="pass">通过 ${pass+7}</span> · <span class="fail">失败 ${fail}</span>`; // +7 = 列表折叠未展示的关联用例
+  }
+  if (!S.fixed && fail>0) $('#floatTrapDetail').classList.remove('hidden');
+  $('#testCnt').textContent='12/48';
+  $('#testCnt').className = fail ? 'cnt bad' : 'cnt ok';
+  return {pass, fail};
+}
+
+/* ---------- 检查项 ---------- */
+function setCheck(i, state){
+  const row = $(`.check-row[data-check="${i}"]`);
+  row.className = 'check-row ' + state;
+  row.querySelector('.icon').classList.toggle('hidden', state!=='pass');
+  const done = $$('#checksList .check-row.pass').length;
+  $('#checkCnt').textContent = `${done}/4`;
+  $('#checkCnt').className = done===4 ? 'cnt ok' : 'cnt';
+}
+async function runChecks(){
+  for (let i=1;i<=4;i++){ chk(); setCheck(i,'run'); await sleep(420); setCheck(i,'pass'); }
+  S.checksRun = true;
+}
+
+/* ---------- 记忆 ---------- */
+function memTk(k){ 
+  $('#memTkLabel').textContent = `${k} / 2K`;
+  $('#sbMemoryText').textContent = `记忆 ${k} / 2K`;
+  $('#memBar').style.width = Math.min(100, k/2*100) + '%';
+}
+function adoptMemoryUI(){
+  S.memAdopted = true;
+  $('#memConvRow').style.display='flex';
+  $('#memTreeNew').style.display='flex';
+  $('#gitMemRow').style.display='flex';
+  $('#gitActBadge').textContent = '3';
+  const rv = $('#rvMem');
+  if (rv && rv.dataset.state==='pending'){
+    rv.dataset.state='done';
+    rv.querySelector('.rv-actions').innerHTML = `<span class="rv-ok"><svg class="icon"><use href="#i-check"/></svg>已采纳</span>`;
+  }
+  reviewRefresh();
+  memTk(1.95);
+  $('#memBreakdown').innerHTML = `项目层 1.35K · 用户层 0.4K · 会话层 0.2K <span style="color:var(--yellow)">· 接近上限,建议整理</span>`;
+}
+function memoryCard(){
+  const el = document.createElement('div');
+  el.className = 'memcard';
+  el.innerHTML = `
+    <div class="mc-head"><svg class="icon"><use href="#i-bulb"/></svg>记忆建议(本次会话沉淀)</div>
+    <div class="mc-body"><span class="f">.memory/project/conventions.md</span><br>· 金额一律以「分」为整数单位计算,展示用 toFixed(2)<br>· 本项目浮点金额断言:期望值写字面量,勿用浮点运算生成</div>
+    <div class="mc-actions">
+      <button class="btn primary" data-a="adopt">采纳并写入</button>
+      <button class="btn" data-a="skip">忽略</button>
+    </div>
+    <div class="mc-state on"></div>`;
+  feed.appendChild(el); scrollFeed();
+  const state = el.querySelector('.mc-state');
+  el.querySelector('[data-a="adopt"]').onclick = ()=>{
+    el.classList.add('adopted');
+    state.innerHTML = `<svg class="icon sm"><use href="#i-check"/></svg>已写入 .memory/project/conventions.md(项目层)`;
+    adoptMemoryUI();
+    toast('记忆已采纳 · 三级注入预算更新至 1.95K/2K','ok');
+  };
+  el.querySelector('[data-a="skip"]').onclick = ()=>{
+    el.classList.add('skipped');
+    state.innerHTML = `已忽略(可在「记忆」面板手动补录)`;
+  };
+}
+$('#memTidy').onclick = ()=>{
+  if (!S.memAdopted){ toast('先在演示流程中采纳记忆建议,再来整理','warn'); return; }
+  if (S.tidyDone){ toast('已整理过,无重复项','warn'); return; }
+  S.tidyDone = true;
+  memTk(1.6);
+  $('#memBreakdown').innerHTML = `项目层 1.1K · 用户层 0.3K · 会话层 0.2K · 已合并 3 条重复反馈`;
+  toast('整理完成:合并 feedback.md 中 3 条重复反馈,腾出 0.35K(冲突/遗忘维护)','ok');
+};
+/* 记忆面板详情 */
+const MEM_DETAIL = {
+  project: `<div class="md-name">.memory/project/project.md</div><div style="margin-top:6px">· 技术栈:vite + ts,包管理 pnpm<br>· 测试框架 vitest,命令 \`pnpm test\`<br>· 金额展示统一保留两位小数</div><div class="md-src">来源:初始导入 + 会话沉淀 · 最近命中:3 分钟前</div>`,
+  conv: `<div class="md-name">.memory/project/conventions.md</div><div style="margin-top:6px">· 金额一律以「分」为整数单位计算,展示用 toFixed(2)<br>· 浮点金额断言:期望值写字面量</div><div class="md-src">来源:建议卡片(会话:购物车修复)· 刚刚写入</div>`,
+  feedback: `<div class="md-name">.memory/user/feedback.md</div><div style="margin-top:6px">· 用户偏好:提交信息用中文动词开头<br>· 不要主动改动 preview/ 目录<br>· 汇报控制在 5 行以内</div><div class="md-src">来源:用户纠正 ×3 · 最近命中:昨天</div>`,
+};
+$$('.mem-item').forEach(m=>m.onclick=()=>{
+  $$('.mem-item').forEach(x=>x.classList.remove('sel'));
+  m.classList.add('sel');
+  $('#memDetail').innerHTML = MEM_DETAIL[m.dataset.mem] || MEM_DETAIL.project;
+});
+$('#sbMemory').onclick = ()=>setSide('memory');
+
+/* ---------- 计划 / 评审 面板 ---------- */
+const RV_ACTIONS = {
+  rvDiff: `<button class="btn xs" data-rv="view">看 diff</button><button class="btn xs primary" data-rv="approve">通过</button><button class="btn xs" data-rv="ask">追问</button>`,
+  rvMem: `<button class="btn xs primary" data-rv="approve">通过</button><button class="btn xs" data-rv="ask">追问</button>`,
+  rvChecks: `<button class="btn xs primary" data-rv="approve">通过</button>`,
+};
+function reviewRefresh(){
+  const n = $$('.review-item').filter(i=>i.dataset.state==='pending' && i.style.display!=='none').length;
+  const c = $('#reviewBadge');
+  c.textContent = n;
+  c.classList.toggle('warn', n>0);
+  c.classList.toggle('done', n===0);
+}
+function resetReview(){
+  for (const [id,act] of Object.entries(RV_ACTIONS)){
+    const el = document.getElementById(id);
+    el.dataset.state='pending';
+    el.querySelector('.rv-actions').innerHTML=act;
+  }
+  $('#rvChecks').style.display='none';
+  reviewRefresh();
+}
+$('#reviewPanel').addEventListener('click', e=>{
+  const b = e.target.closest('[data-rv]');
+  if (!b) return;
+  const item = b.closest('.review-item');
+  if (b.dataset.rv==='view'){ setEd('diff'); }
+  else if (b.dataset.rv==='approve'){
+    item.dataset.state='done';
+    item.querySelector('.rv-actions').innerHTML = `<span class="rv-ok"><svg class="icon"><use href="#i-check"/></svg>已通过</span>`;
+    toast('评审通过 · 该自动提交已确认,可并入主线','ok');
+    reviewRefresh();
+  } else if (b.dataset.rv==='ask'){
+    setEd('chat');
+    pushUser('关于这个评审项,我有个问题:');
+    pushCtxChip('评审 · ' + item.querySelector('.rv-title').textContent);
+  }
+});
+
+/* ---------- 浏览器自动化动画 ---------- */
+function pvPoint(x, y){
+  const c = document.createElement('div');
+  c.className = 'pv-click';
+  c.style.left = x+'px'; c.style.top = y+'px';
+  c.innerHTML = `<svg class="icon"><use href="#i-pointer"/></svg>`;
+  $('#pvOverlay').appendChild(c);
+  return c;
+}
+function pvRing(el){
+  const r = el.getBoundingClientRect();
+  const stage = $('.pv-stage').getBoundingClientRect();
+  const ring = document.createElement('div');
+  ring.className = 'pv-ring';
+  ring.style.left = (r.left-stage.left-3)+'px';
+  ring.style.top = (r.top-stage.top-3)+'px';
+  ring.style.width = (r.width+6)+'px';
+  ring.style.height = (r.height+6)+'px';
+  $('#pvOverlay').appendChild(ring);
+  return ring;
+}
+function pvShot(){
+  const f = $('#pvFlash'); f.classList.remove('go'); void f.offsetWidth; f.classList.add('go');
+  const chip = document.createElement('div');
+  chip.className = 'pv-shotchip';
+  chip.innerHTML = `<div class="thumb"></div><div><b style="color:var(--fg)">截图已回传</b><br>多模态比对 · 12.4KB</div>`;
+  $('.pv-stage').appendChild(chip);
+  setTimeout(()=>chip.remove(), 4200);
+}
+
+/* ================================================================
+   主脚本流:修复购物车总额浮点 bug(自测闭环支柱)
+   ================================================================ */
+async function fixFlow(){
+  ABORT = false; setBusy(true);
+  setEd('chat');
+  S.fixed = false; S.checksRun = false;
+  resetTests();
+  resetReview();
+  [1,2,3,4].forEach(i=>setCheck(i,''));
+  $$('#planSteps .plan-step').forEach(p=>{ p.className='plan-step'; p.querySelector('.icon').classList.add('hidden'); p.querySelector('.ps-commit')?.remove(); });
+  $('#gitNewCommit').textContent='';
+  $('#agentStatusText').textContent = '运行中 · 修复购物车总额浮点 bug';
+
+  try{
+    /* 1. 定位 */
+    planGo(1);
+    const b1 = agentBubble();
+    await typeInto(b1, '收到。我先定位总额的计算与展示链路,再动手改。');
+    const t1 = toolCard({icon:'i-search', title:'读取与检索', meta:'cart.ts · cart.test.ts', body:`grep "lineTotal" → 3 处命中\n读 cart.ts(25 行)· 读 cart.test.ts:14\n结论:PRICES[sku] * qty 浮点直乘,29.9 × 3 = 89.69999999999999`});
+    setEd('code'); await sleep(1500); setEd('chat'); t1.ok('3 处命中'); planDone(1,'e3d1a02'); await sleep(300);
+
+    /* 2. 修改 + diff */
+    planGo(2);
+    const b2 = agentBubble();
+    await typeInto(b2, '根因明确:金额以元为单位浮点直乘。改为「分」整数计算,展示层 toFixed(2)。');
+    const t2 = toolCard({icon:'i-zap', title:'编辑 cart.ts', meta:'', body:`- export function lineTotal(sku, qty)\n+ export function priceCents(sku) / lineTotalCents(sku, qty)\n+ export function formatYuan(cents) → toFixed(2)`});
+    t2.el.querySelector('.tc-title').appendChild(diffChip());
+    setEd('diff'); await sleep(1800); setEd('chat'); pokeTab('diff'); t2.ok('已应用'); planDone(2,'9c4f7be'); await sleep(300);
+    term(`<span class="ok">✓</span> 计划步骤 2 自动提交 · <span class="dim">9c4f7be fix(cart): 金额改为分单位整数计算</span>`);
+
+    /* 3. 智能选测 */
+    planGo(3);
+    const t3 = toolCard({icon:'i-flask', title:'运行测试 · 智能选测', meta:'12/48 · 基于 diff', body:`$ pnpm test --changed cart.ts\nvitest run · 关联用例 12 个`});
+    setBottom('tests'); await sleep(500); t3.ok();
+    const r1 = await animateTests();
+    if (r1.fail > 0){
+      const b3 = agentBubble();
+      await typeInto(b3, '第一轮浮点陷阱用例仍失败——期望值在测试里也是浮点算出来的。把断言期望改为字面量 "89.70"。');
+      const t3b = toolCard({icon:'i-zap', title:'编辑 cart.test.ts', meta:'断言期望字面量化', body:`- expect(lineTotalCents(x,3)/100+'')\n+ expect(formatYuan(lineTotalCents(x,3))).toBe('89.70')`});
+      await sleep(900); t3b.ok('已应用');
+      S.fixed = true; pvUpdateTotal();
+      const r2 = await animateTests();
+      if (r2.fail>0) throw 'unexpected';
+    } else {
+      S.fixed = true; pvUpdateTotal();
+    }
+    planDone(3,'5a8c93f'); await sleep(300);
+
+    /* 4. 浏览器验证 */
+    planGo(4);
+    const t4 = toolCard({icon:'i-pointer', title:'浏览器自动化验证', meta:'navigate · click · snapshot', body:`navigate http://localhost:5173\nclick "加入购物车"\nsnapshot + screenshot → 多模态回传比对`});
+    t4.el.querySelector('.tc-body').insertAdjacentHTML('beforeend', `<div class="shot" title="点击查看预览"><span class="cap">step-2 · 375×?@2x</span></div>`);
+    t4.el.querySelector('.shot').onclick = ()=>setEd('preview');
+    setEd('preview'); await sleep(600);
+    pvRing($('#pvTotal')); await sleep(500);
+    const add = $('#pvAdd').getBoundingClientRect();
+    const stage = $('.pv-stage').getBoundingClientRect();
+    const c = pvPoint(add.left-stage.left+add.width/2, add.top-stage.top+add.height/2);
+    await sleep(700);
+    $('#pvAdd').click();
+    await sleep(400);
+    pvRing($('#pvTotal')); pvUpdateTotal(); pvShot();
+    await sleep(900); c.remove();
+    t4.ok('比对通过');
+    setEd('chat'); pokeTab('preview');
+    term(`<span class="ok">✓</span> 浏览器验证:总额展示 ¥89.70 · 角标同步 · 控制台无新增错误`);
+    planDone(4,'b7e2d41'); await sleep(300);
+
+    /* 5. 检查项 + 记忆 */
+    planGo(5);
+    setBottom('checks');
+    await runChecks();
+    planDone(5,'d0f5c8a');
+    term(`<span class="ok">✓</span> 计划步骤 5 自动提交 · <span class="dim">d0f5c8a test(checks): 沉淀项目检查项</span>`);
+    $('#gitNewCommit').innerHTML = `
+            <div class="grow">
+              <div class="ggraph"><span class="gdot" style="background:var(--purple)"></span></div>
+              <div class="gbody">
+                <div class="gl1"><span class="ghash">d0f5c8a</span><span class="gref head">HEAD</span></div>
+                <div class="gmsg">test(checks): 沉淀项目检查项</div>
+                <div class="gmeta">Agent · 计划步骤 5 自动提交 · 刚刚</div>
+              </div>
+            </div>`;
+    $('#grefHeadOld')?.remove();
+    $('#rvChecks').style.display='block';
+    reviewRefresh();
+
+    const b4 = agentBubble();
+    await typeInto(b4, '完成:根因是浮点直乘,已改为分单位整数计算;12/12 通过,浏览器实测总额 ¥89.70,4 项检查全绿,5 步已自动提交。沉淀了一条约定到记忆建议,请过目。');
+    memoryCard();
+    toast('自测闭环完成 · 全部验证通过','ok');
+  } catch(e){
+    if (e==='aborted'){
+      const b = agentBubble();
+      b.textContent = '已停止。当前工作区变更保留,未自动提交,可继续追问。';
+      $('#agentStatusText').textContent = '已停止';
+    } else { console.error(e); }
+  } finally {
+    setBusy(false);
+    $('#agentStatusText').textContent = `空闲 · 记忆已注入 ${S.memAdopted?'1.95K':'1.8K'}`;
+    $('#planBadge').textContent = `${$$('#planSteps .plan-step.done').length}/5`;
+  }
+}
+
+/* 快捷脚本:跑一遍检查项 */
+async function checksFlow(){
+  ABORT = false; setBusy(true);
+  setEd('chat');
+  $('#agentStatusText').textContent = '运行中 · 执行检查项';
+  try{
+    const b = agentBubble();
+    await typeInto(b, '好,直接跑 4 项检查(1 项临时 + 3 项项目资产)。');
+    const t = toolCard({icon:'i-check-c', title:'执行检查项', meta:'4 项', body:'dev server 就绪(HTTP 200)· 逐项浏览器断言'});
+    setBottom('checks');
+    await runChecks();
+    t.ok('4/4');
+    const b2 = agentBubble();
+    await typeInto(b2, '4/4 通过。检查项已作为项目资产沉淀,下次 diff 涉及购物车时会自动带上。');
+  } catch(e){ if(e==='aborted'){ agentBubble().textContent='已停止。'; } }
+  finally{ setBusy(false); $('#agentStatusText').textContent='空闲'; }
+}
+
+/* Agent 自测档(静默) */
+async function runSilentSelfTest(){
+  setBottom('tests');
+  const t = toolCard({icon:'i-spark', title:'Agent 自测(静默)', meta:'后台', body:'智能选测 + 浏览器断言 · 不切换你的视图'});
+  await sleep(1800);
+  const r = await animateTests();
+  t.ok(r.fail? '存在失败' : '12/12');
+  toast(r.fail? `Agent 自测:${r.pass} 通过 · ${r.fail} 失败(见测试面板)` : 'Agent 自测:12/12 通过,无需打扰','ok');
+}
+
+/* ---------- 「问 agent」(错误一键带上下文) ---------- */
+async function askAgent(kind){
+  if (BUSY){ toast('agent 正在运行,稍后再试','warn'); return; }
+  setEd('chat');
+  setBottom('tests');
+  pushUser(kind==='term' ? '终端这条遗留错误是什么情况?' : '「浮点陷阱」这个用例为什么失败?');
+  pushCtxChip(kind==='term'
+    ? '终端 · [vite] 总价渲染 "89.69999999999999" ≠ "89.70"'
+    : 'cart.test.ts:14 · AssertionError "89.70" ≠ "89.69999999999999"');
+  ABORT=false; setBusy(true);
+  try{
+    const b = agentBubble();
+    if (S.fixed){
+      await typeInto(b, '这条错误已在当前工作区修复:金额改为分单位整数计算。若终端仍显示旧值,是上一会话的归档记录,可忽略或让我清理。');
+    } else {
+      await typeInto(b, '根因:JS 浮点直乘 29.9 × 3 = 89.69999999999999。cart.ts 的 lineTotal 以元为单位浮点运算,展示层又没有格式化。要我现在按「分单位整数」方案修复并自测吗?');
+    }
+  } finally { setBusy(false); }
+}
+$$('.ask-btn').forEach(b=>b.onclick=()=>askAgent(b.dataset.ask));
+
+/* ---------- 预设与输入 ---------- */
+$$('.preset').forEach(p=>p.onclick=()=>{ if(p.dataset.preset==='fix') fixFlow(); else checksFlow(); });
+$('#stopBtn').onclick = ()=>{ ABORT = true; toast('正在停止 agent…','warn'); };
+async function sendFree(){
+  const ta = $('#chatInput');
+  const text = ta.value.trim();
+  if (!text) return;
+  if (BUSY){ toast('agent 正在运行','warn'); return; }
+  setEd('chat');
+  ta.value='';
+  pushUser(text);
+  ABORT=false; setBusy(true);
+  try{
+    const b = agentBubble();
+    await typeInto(b, '(原型说明)这条通道在真实产品中接 pi 内核。本原型只内置了两条脚本演示:点下方「修复购物车总额浮点 bug」看完整自测闭环,或「跑一遍检查项」。');
+  } finally { setBusy(false); }
+}
+$('#chatSend').onclick = sendFree;
+$('#chatInput').addEventListener('keydown', e=>{
+  if (e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendFree(); }
+});
+
+/* ---------- 引导层 ---------- */
+$('#introClose').onclick = ()=>$('#intro').remove();
+
+/* 初始渲染 */
+pvUpdateTotal();
+memTk(1.8);
+setCheck(1,''); setCheck(2,''); setCheck(3,''); setCheck(4,'');
+reviewRefresh();
+</script>
+</body>
+</html>
