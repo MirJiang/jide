@@ -12,3 +12,5 @@ spikes/*/.hutch/
 apps/desktop/.hutch/devkit/
 .env
 .env.*
+runtime/
+apps/desktop/perf/

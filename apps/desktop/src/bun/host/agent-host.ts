@@ -52,6 +52,8 @@ export class AgentHost {
 	private journal: EventJournal = createEventJournal();
 	private emit: EmitFn = () => {};
 
+	constructor(private runtimeRoot: string = process.env.JIDE_HOME ?? join(process.cwd(), "runtime")) {}
+
 	/** 注入事件出口(由 index.ts 接到 RPC 推送) */
 	bindEmitter(emit: EmitFn) {
 		this.emit = emit;
@@ -76,7 +78,7 @@ export class AgentHost {
 
 	private sessionDir(cwd: string) {
 		const encoded = cwd.replace(/[^a-zA-Z0-9_-]+/g, "--");
-		const dir = join(process.env.JIDE_HOME ?? join(process.cwd(), "runtime"), "sessions", encoded);
+		const dir = join(this.runtimeRoot, "sessions", encoded);
 		mkdirSync(dir, { recursive: true });
 		return dir;
 	}

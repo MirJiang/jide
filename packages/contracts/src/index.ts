@@ -70,6 +70,162 @@ export interface HostRequestShapes {
 			  }
 			| { ok: false; error: string };
 	};
+
+	/* ---------------- 工作区域(W1-W4) ---------------- */
+
+	/** 打开/注册项目(信任门前置检查:是否 git 仓库、是否已信任) */
+	"project.open": {
+		params: { path: string };
+		response:
+			| {
+					ok: true;
+					projectId: string;
+					root: string;
+					name: string;
+					trusted: boolean;
+					isRepo: boolean;
+					branch: string | null;
+			  }
+			| { ok: false; error: string };
+	};
+	/** 信任门:显式信任该项目(W1) */
+	"project.trust": {
+		params: { projectId: string };
+		response: { ok: true; trusted: boolean } | { ok: false; error: string };
+	};
+	/** 列出项目的工作区(Default + worktrees) */
+	"workspace.list": {
+		params: { projectId: string };
+		response:
+			| {
+					ok: true;
+					activeWorkspaceId: string | null;
+					workspaces: Array<{
+						id: string;
+						kind: "default" | "worktree";
+						branch: string;
+						path: string;
+						baseRef?: string;
+					}>;
+			  }
+			| { ok: false; error: string };
+	};
+	/** 创建隔离工作区(worktree,W3)。仅已信任项目。 */
+	"workspace.create": {
+		params: { projectId: string; name: string; fromRef?: string };
+		response:
+			| { ok: true; workspaceId: string; path: string; branch: string }
+			| { ok: false; error: string };
+	};
+	/** 原子切换工作区(W4):会话/终端等上下文整套换入换出 */
+	"workspace.switch": {
+		params: { projectId: string; workspaceId: string };
+		response: { ok: true; activeWorkspaceId: string } | { ok: false; error: string };
+	};
+
+	/* ---------------- 文件域(编辑器后端) ---------------- */
+
+	"fs.list": {
+		params: { workspaceId: string; relPath: string };
+		response:
+			| { ok: true; entries: Array<{ name: string; kind: "file" | "dir" }> }
+			| { ok: false; error: string };
+	};
+	"fs.read": {
+		params: { workspaceId: string; relPath: string };
+		response:
+			| { ok: true; content: string; size: number }
+			| { ok: false; error: string };
+	};
+	"fs.write": {
+		params: { workspaceId: string; relPath: string; content: string };
+		response: { ok: true } | { ok: false; error: string };
+	};
+
+	/* ---------------- 终端域(M2 基面) ---------------- */
+
+	"terminal.create": {
+		params: { workspaceId: string; cwd?: string };
+		response:
+			| { ok: true; terminalId: string }
+			| { ok: false; error: string };
+	};
+	"terminal.write": {
+		params: { terminalId: string; data: string };
+		response: { ok: true } | { ok: false; error: string };
+	};
+	"terminal.resize": {
+		params: { terminalId: string; cols: number; rows: number };
+		response: { ok: true } | { ok: false; error: string };
+	};
+	"terminal.dispose": {
+		params: { terminalId: string };
+		response: { ok: true } | { ok: false; error: string };
+	};
+
+	/* ---------------- 计划域(W5) ---------------- */
+
+	"plan.create": {
+		params: { workspaceId: string; goal: string; steps: string[] };
+		response:
+			| { ok: true; planId: string }
+			| { ok: false; error: string };
+	};
+	/** 标记步骤完成;隔离工作区触发自动提交(W5),Default 拒绝 */
+	"plan.stepDone": {
+		params: { planId: string; stepIndex: number };
+		response:
+			| { ok: true; commit?: { sha: string; message: string } }
+			| { ok: false; error: string };
+	};
+	/** 查询工作区当前进行中的计划(工作区切换时恢复上下文用) */
+	"plan.get": {
+		params: { workspaceId: string };
+		response:
+			| {
+					ok: true;
+					plan:
+						| {
+								planId: string;
+								goal: string;
+								steps: Array<{ text: string; state: "pending" | "doing" | "done"; commit?: string }>;
+						  }
+						| null;
+			  }
+			| { ok: false; error: string };
+	};
+
+	/* ---------------- Git 呈现 ---------------- */
+
+	"git.status": {
+		params: { workspaceId: string };
+		response:
+			| {
+					ok: true;
+					branch: string;
+					changes: Array<{ path: string; staged: boolean; kind: "M" | "A" | "D" | "?" }>;
+					ahead: number;
+					behind: number;
+			  }
+			| { ok: false; error: string };
+	};
+	"git.log": {
+		params: { workspaceId: string; limit?: number };
+		response:
+			| {
+					ok: true;
+					commits: Array<{
+						sha: string;
+						shortSha: string;
+						message: string;
+						author: string;
+						date: string;
+						refs: string[];
+						isAgent: boolean;
+					}>;
+			  }
+			| { ok: false; error: string };
+	};
 }
 
 export type HostRequestMethod = keyof HostRequestShapes;
@@ -118,6 +274,24 @@ export type HostEvent =
 	  }
 	| { type: "agent.settled"; seq: number; sessionId: string }
 	| { type: "session.rebuilt"; seq: number; sessionId: string; restoredMessages: number }
+	| { type: "workspace.changed"; seq: number; projectId: string; activeWorkspaceId: string }
+	| {
+			type: "terminal.output";
+			seq: number;
+			terminalId: string;
+			/** 增量输出(已按 xterm 写法序列化) */
+			data: string;
+	  }
+	| { type: "terminal.exit"; seq: number; terminalId: string; code: number | null }
+	| {
+			type: "plan.updated";
+			seq: number;
+			planId: string;
+			workspaceId: string;
+			goal: string;
+			steps: Array<{ text: string; state: "pending" | "doing" | "done"; commit?: string }>;
+	  }
+	| { type: "git.commits-updated"; seq: number; workspaceId: string }
 	| { type: "host.log"; seq: number; level: "info" | "warn" | "error"; message: string };
 
 export type HostEventType = HostEvent["type"];
@@ -161,6 +335,11 @@ const EVENT_TYPES: ReadonlySet<string> = new Set<HostEventType>([
 	"agent.tool",
 	"agent.settled",
 	"session.rebuilt",
+	"workspace.changed",
+	"terminal.output",
+	"terminal.exit",
+	"plan.updated",
+	"git.commits-updated",
 	"host.log",
 ]);
 
