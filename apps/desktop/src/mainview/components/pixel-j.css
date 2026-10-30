@@ -1,0 +1,70 @@
+/* PixelJ — 像素 J 头像
+   静止:品牌蓝双色调;忙碌:追光明暗波(延迟沿字形轮廓顺时针分布 → 旋转感) */
+
+.pj {
+	display: inline-grid;
+	gap: 1px;
+	padding: 2px;
+	line-height: 0;
+	flex: none;
+}
+
+.pj-cell {
+	display: block;
+	background: #6ea8fe;
+	/* 像素描边:右下暗、左上亮的块状质感 */
+	box-shadow:
+		inset -1px -1px 0 rgba(10, 20, 40, 0.45),
+		inset 1px 1px 0 rgba(220, 240, 255, 0.35);
+}
+
+/* 静止微光(glow 变体:标题栏 logo) */
+.pj-glow .pj-cell {
+	filter: brightness(1);
+}
+
+/* 忙碌:追光 —— 每格同一亮度波,延迟按轮廓相位错开 */
+.pj-busy .pj-cell {
+	animation: pj-chase 900ms linear infinite;
+	animation-delay: var(--pj-delay, 0ms);
+}
+
+@keyframes pj-chase {
+	0% {
+		filter: brightness(0.45);
+	}
+	35% {
+		filter: brightness(2.1) saturate(1.2);
+	}
+	70% {
+		filter: brightness(0.7);
+	}
+	100% {
+		filter: brightness(0.45);
+	}
+}
+
+/* 整体随节律轻微呼吸(增强"运转中"的生命感) */
+.pj-busy {
+	animation: pj-breathe 900ms ease-in-out infinite;
+}
+
+@keyframes pj-breathe {
+	0%,
+	100% {
+		opacity: 0.85;
+	}
+	35% {
+		opacity: 1;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.pj-busy .pj-cell,
+	.pj-busy {
+		animation: none;
+	}
+	.pj-busy .pj-cell {
+		filter: brightness(1.35);
+	}
+}

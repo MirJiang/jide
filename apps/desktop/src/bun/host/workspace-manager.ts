@@ -99,7 +99,8 @@ export class WorkspaceManager {
 		const rec = this.store.projects[id];
 		const branch = await this.currentBranch(root);
 		const workspaces = await this.listWorkspaces(id);
-		if (!rec.activeWorkspaceId && workspaces.length > 0) {
+		// 悬空活动工作区(如 worktree 已被删除)回落到 Default
+		if (workspaces.length > 0 && (!rec.activeWorkspaceId || !workspaces.some((w) => w.id === rec.activeWorkspaceId))) {
 			rec.activeWorkspaceId = workspaces[0].id;
 			this.persist();
 		}

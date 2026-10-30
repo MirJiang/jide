@@ -1,9 +1,11 @@
-/** 状态栏:信任 / 工作区 / 终端开关 / 会话 / seq */
+/** 状态栏:信任 / 工作区 / 终端开关 / 会话(PixelJ)/ 记忆预算 */
 
 import { useIDE } from "../store";
+import { PixelJ } from "./PixelJ";
 
 export function StatusBar() {
 	const s = useIDE();
+	const busy = s.chat.status === "busy";
 	return (
 		<footer
 			className="flex h-[25px] items-center gap-4 px-2.5 text-[11.5px]"
@@ -21,12 +23,9 @@ export function StatusBar() {
 				<button onClick={() => s.toggleBottom()} title="切换底部面板">
 					{s.bottomVisible ? "▾ 面板" : "▴ 面板"}
 				</button>
-				<span className="flex items-center gap-1">
-					<span
-						className="inline-block h-2 w-2 rounded-full"
-						style={{ background: s.chat.status === "busy" ? "var(--green)" : "var(--fg-faint)" }}
-					/>
-					{s.chat.status === "busy" ? "agent 运行中" : "agent 空闲"}
+				<span className="flex items-center gap-1.5" title={busy ? "agent 运行中" : "agent 空闲"}>
+					<PixelJ cell={1.5} busy={busy} title={busy ? "agent 运行中" : "agent 空闲"} />
+					{busy ? "agent 运行中" : "agent 空闲"}
 				</span>
 				<span style={{ color: "var(--fg-faint)" }}>seq {s.lastSeq}</span>
 				<span className="flex items-center gap-1" title={"三级注入:项目 " + s.memoryBudget.projectK + "K · 用户 " + s.memoryBudget.userK + "K · 会话 " + s.memoryBudget.sessionK + "K"}>

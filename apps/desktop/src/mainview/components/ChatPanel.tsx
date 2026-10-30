@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useIDE } from "../store";
 import { MemorySuggestionCard } from "./MemoryPanel";
+import { PixelJ } from "./PixelJ";
 
 const STATUS_LABEL: Record<string, string> = {
 	idle: "空闲",
@@ -28,7 +29,8 @@ export function ChatPanel() {
 				className="flex items-center gap-2 px-4 py-1.5"
 				style={{ background: "var(--bg1)", borderBottom: "1px solid var(--line)" }}
 			>
-				<span className="text-xs font-medium" style={{ color: "var(--acc)" }}>✦ 会话</span>
+				<PixelJ cell={2.5} busy={busy} glow title="JIDE Agent" />
+				<span className="text-xs font-medium" style={{ color: "var(--acc)" }}>会话</span>
 				<span className="text-[11px]" style={{ color: "var(--fg-faint)" }}>会话随工作区隔离</span>
 				{s.demo && (
 					<span className="rounded px-1.5 py-0.5 text-[10px]" style={{ background: "var(--purple-bg)", color: "var(--purple)" }}>
@@ -85,20 +87,28 @@ export function ChatPanel() {
 								{m.text}
 							</div>
 						) : (
-							<div
-								key={m.id}
-								className="self-start rounded-lg border px-3 py-2"
-								style={{
-									background: "var(--bg2)",
-									borderColor: "var(--line)",
-									color: m.tool ? "var(--fg-dim)" : "var(--fg)",
-									fontFamily: m.tool ? "Consolas, monospace" : undefined,
-									fontSize: m.tool ? 12 : undefined,
-									maxWidth: 840,
-								}}
-							>
-								{m.tool && <span style={{ color: m.toolError ? "var(--red)" : "var(--acc)" }}>⚙ </span>}
-								{m.text}
+							<div key={m.id} className="flex items-start gap-2 self-start" style={{ maxWidth: 880 }}>
+								<div className="pt-1.5">
+									<PixelJ
+										cell={2.5}
+										busy={busy && m.id === s.chat.messages[s.chat.messages.length - 1]?.id && !m.tool}
+										title="JIDE Agent"
+									/>
+								</div>
+								<div
+									className="rounded-lg border px-3 py-2"
+									style={{
+										background: "var(--bg2)",
+										borderColor: "var(--line)",
+										color: m.tool ? "var(--fg-dim)" : "var(--fg)",
+										fontFamily: m.tool ? "Consolas, monospace" : undefined,
+										fontSize: m.tool ? 12 : undefined,
+										maxWidth: 840,
+									}}
+								>
+									{m.tool && <span style={{ color: m.toolError ? "var(--red)" : "var(--acc)" }}>⚙ </span>}
+									{m.text}
+								</div>
 							</div>
 						),
 					)}
@@ -106,12 +116,17 @@ export function ChatPanel() {
 						<MemorySuggestionCard key={sg.suggestionId} suggestion={sg} />
 					))}
 					{s.chat.streaming && (
-						<div
-							className="self-start rounded-lg border px-3 py-2"
-							style={{ background: "var(--bg2)", borderColor: "var(--line)", maxWidth: 840 }}
-						>
-							{s.chat.streaming}
-							<span className="animate-pulse">▍</span>
+						<div className="flex items-start gap-2 self-start" style={{ maxWidth: 880 }}>
+							<div className="pt-1.5">
+								<PixelJ cell={2.5} busy title="JIDE Agent" />
+							</div>
+							<div
+								className="rounded-lg border px-3 py-2"
+								style={{ background: "var(--bg2)", borderColor: "var(--line)", maxWidth: 840 }}
+							>
+								{s.chat.streaming}
+								<span className="animate-pulse">▍</span>
+							</div>
 						</div>
 					)}
 				</div>

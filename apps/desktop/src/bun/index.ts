@@ -502,6 +502,7 @@ const rpc = BrowserView.defineRPC<JideRPC>({
 					previewWindow = new BrowserWindow({
 						title: "JIDE 预览",
 						url,
+						titleBarStyle: "hiddenInset",
 						frame: { width: 520, height: 760, x: 1200, y: 120 },
 					});
 					emit({ type: "host.log", level: "info", message: "内嵌预览已打开:" + url });
@@ -518,6 +519,29 @@ const rpc = BrowserView.defineRPC<JideRPC>({
 			},
 
 			/* ---------- 记忆域 M4 ---------- */
+			"window.minimize": () => {
+				mainWindow.minimize();
+				return { ok: true };
+			},
+			"window.toggleMaximize": () => {
+				try {
+					if (windowMaximized) {
+						mainWindow.unmaximize();
+						windowMaximized = false;
+					} else {
+						mainWindow.maximize();
+						windowMaximized = true;
+					}
+					return { ok: true, maximized: windowMaximized };
+				} catch (err: any) {
+					return { ok: false, error: String(err?.message ?? err) };
+				}
+			},
+			"window.close": () => {
+				mainWindow.close();
+				return { ok: true };
+			},
+
 			"memory.status": ({ workspaceId }) => {
 				const m = memoryFor(workspaceId);
 				if (!m) return { ok: false, error: "工作区不存在" };
@@ -571,11 +595,14 @@ const rpc = BrowserView.defineRPC<JideRPC>({
 });
 
 let previewWindow: BrowserWindow | null = null;
+let windowMaximized = false;
 
 const mainWindow = new BrowserWindow({
 	title: "JIDE",
 	url: await getMainViewUrl(),
 	rpc,
+	// 无边框:自定义标题栏(hiddenInset = 无系统标题栏但保留 resize 手柄)
+	titleBarStyle: "hiddenInset",
 	frame: {
 		width: 1360,
 		height: 860,

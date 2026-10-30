@@ -410,6 +410,20 @@ export interface HostRequestShapes {
 
 	/* ---------------- 记忆域 M4(§5) ---------------- */
 
+	/** 无边框窗口控制(自定义标题栏) */
+	"window.minimize": {
+		params: {};
+		response: { ok: true };
+	};
+	"window.toggleMaximize": {
+		params: {};
+		response: { ok: true; maximized: boolean } | { ok: false; error: string };
+	};
+	"window.close": {
+		params: {};
+		response: { ok: true };
+	};
+
 	"memory.status": {
 		params: { workspaceId: string };
 		response:

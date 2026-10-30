@@ -1,24 +1,41 @@
-/** 顶栏:logo + 分离 Git 状态条 + 工作区切换 + 运行入口(M3 实装) */
+/** 顶栏(自定义标题栏):PixelJ logo + 分离 Git 状态条 + 工作区切换 + 运行入口 + 窗控 */
 
 import { useState } from "react";
 import { useIDE } from "../store";
+import { PixelJ } from "./PixelJ";
 
 export function TitleBar() {
 	const s = useIDE();
 	const [wsOpen, setWsOpen] = useState(false);
 	const [runOpen, setRunOpen] = useState(false);
 	const [wtName, setWtName] = useState("");
+	const [maximized, setMaximized] = useState(false);
 	const active = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
 	const canOp = Boolean(s.project?.trusted);
+	const busy = s.chat.status === "busy";
+
+	const winCtl = async (action: "minimize" | "maximize" | "close") => {
+		if (!s.client) return;
+		if (action === "maximize") {
+			const r = await s.client.request("window.toggleMaximize", {});
+			if (r.ok) setMaximized(r.maximized);
+		} else {
+			await s.client.request(action === "minimize" ? "window.minimize" : "window.close", {});
+		}
+	};
 
 	return (
 		<header
-			className="flex items-stretch justify-between px-1.5"
+			/* 无边框窗口:整条顶栏为拖拽区,交互子元素逐个 no-drag */
+			className="jide-drag flex items-stretch justify-between px-1.5"
 			style={{ background: "var(--bg1)", borderBottom: "1px solid var(--line)", height: 44 }}
 		>
 			<div className="flex items-stretch">
-				<div className="flex items-center gap-1.5 px-1 font-semibold tracking-wide" style={{ color: "var(--acc)" }}>
-					JIDE
+				<div className="jide-no-drag flex items-center gap-2 px-2">
+					<PixelJ cell={3} busy={busy} glow title="JIDE" />
+					<span className="font-semibold tracking-wide" style={{ color: "var(--acc)" }}>
+						JIDE
+					</span>
 				</div>
 				<div className="flex flex-col justify-center px-3" style={{ borderRight: "1px solid var(--line)" }}>
 					<span className="text-[9.5px]" style={{ color: "var(--fg-faint)" }}>项目</span>
@@ -123,7 +140,7 @@ export function TitleBar() {
 				</button>
 			</div>
 
-			<div className="flex items-center gap-2 pr-1">
+			<div className="jide-no-drag flex items-center gap-2 pr-1">
 				<div className="relative">
 					<button
 						className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium"
@@ -160,6 +177,31 @@ export function TitleBar() {
 							/>
 						</div>
 					)}
+				</div>
+
+				{/* 窗口控制(无边框自定义 chrome) */}
+				<div className="ml-1 flex items-stretch" style={{ borderLeft: "1px solid var(--line)" }}>
+					<button
+						className="win-btn"
+						title="最小化"
+						onClick={() => void winCtl("minimize")}
+					>
+						─
+					</button>
+					<button
+						className="win-btn"
+						title={maximized ? "还原" : "最大化"}
+						onClick={() => void winCtl("maximize")}
+					>
+						{maximized ? "❐" : "□"}
+					</button>
+					<button
+						className="win-btn win-close"
+						title="关闭"
+						onClick={() => void winCtl("close")}
+					>
+						✕
+					</button>
 				</div>
 			</div>
 		</header>

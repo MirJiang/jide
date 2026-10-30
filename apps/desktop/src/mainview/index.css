@@ -44,3 +44,39 @@ body {
 ::-webkit-scrollbar-track {
 	background: transparent;
 }
+
+
+/* ============ 无边框窗口:自定义标题栏拖拽区 ============ */
+.jide-drag {
+	-webkit-app-region: drag;
+	app-region: drag;
+}
+.jide-no-drag,
+.jide-drag button,
+.jide-drag input,
+.jide-drag select,
+.jide-drag textarea,
+.jide-drag a,
+.jide-drag [role="button"] {
+	-webkit-app-region: no-drag;
+	app-region: no-drag;
+}
+
+/* 窗口控制按钮(右侧三条) */
+.win-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 40px;
+	color: var(--fg-dim);
+	font-size: 11px;
+	transition: background 0.12s ease, color 0.12s ease;
+}
+.win-btn:hover {
+	background: var(--bg3);
+	color: var(--fg);
+}
+.win-close:hover {
+	background: #e05b5b;
+	color: #fff;
+}
