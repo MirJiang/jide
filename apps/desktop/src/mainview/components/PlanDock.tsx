@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useIDE } from "../store";
 
-export function PlanDock() {
+export function PlanDockInner() {
 	const s = useIDE();
 	const [creating, setCreating] = useState(false);
 	const [goal, setGoal] = useState("");
@@ -13,10 +13,7 @@ export function PlanDock() {
 	const done = s.plan ? s.plan.steps.filter((st) => st.state === "done").length : 0;
 
 	return (
-		<aside
-			className="flex w-[290px] flex-col"
-			style={{ background: "var(--bg1)", borderLeft: "1px solid var(--line)" }}
-		>
+		<div className="flex flex-col pb-2">
 			<div
 				className="flex h-[34px] items-center px-3 text-[11px] font-semibold"
 				style={{ letterSpacing: 1.5, color: "var(--fg-dim)" }}
@@ -118,6 +115,6 @@ export function PlanDock() {
 			>
 				⎇ 计划步骤自动提交{isolated ? "已开启(仅隔离工作区)" : "未启用(当前为 Default)"}
 			</div>
-		</aside>
+		</div>
 	);
 }

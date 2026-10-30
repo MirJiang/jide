@@ -226,6 +226,198 @@ export interface HostRequestShapes {
 			  }
 			| { ok: false; error: string };
 	};
+
+	/* ---------------- 测试域 M3(4A-4F) ---------------- */
+
+	/** dev server 生命周期(工作区持有;agent 与内嵌预览共享同一实例) */
+	"devserver.ensure": {
+		params: {
+			workspaceId: string;
+			/** 启动命令;未传则用项目已保存的配置 */
+			command?: string;
+			cwd?: string;
+			port?: number;
+			/** 探测模式:auto(默认)/ http / port / log */
+			probe?: "auto" | "http" | "port" | "log";
+			/** 日志特征(log 模式用,如 "ready in") */
+			readyPattern?: string;
+		};
+		response:
+			| {
+					ok: true;
+					url: string;
+					port: number;
+					probeMode: string;
+					startedMs: number;
+			  }
+			| { ok: false; error: string; logTail?: string };
+	};
+	"devserver.stop": {
+		params: { workspaceId: string };
+		response: { ok: true } | { ok: false; error: string };
+	};
+	"devserver.status": {
+		params: { workspaceId: string };
+		response: {
+			ok: true;
+			state: "stopped" | "starting" | "ready" | "crashed";
+			url: string | null;
+			probeMode: string;
+		};
+	};
+
+	/** HTTP 探测(4B):URL + 期望(状态码/包含文本/JSON 路径) */
+	"probe.http": {
+		params: {
+			url: string;
+			expectStatus?: number;
+			contains?: string;
+			jsonPath?: string;
+			jsonEquals?: string;
+		};
+		response:
+			| { ok: true; passed: boolean; actual: string; detail?: string }
+			| { ok: false; error: string };
+	};
+
+	/** 智能选测(4D):scope=diff 映射关联用例子集;all 全量 */
+	"test.run": {
+		params: { workspaceId: string; scope: "diff" | "all" | "files"; files?: string[] };
+		response:
+			| {
+					ok: true;
+					selected: number;
+					total: number;
+					durationMs: number;
+					results: Array<{
+						name: string;
+						file: string;
+						status: "pass" | "fail" | "skip";
+						durationMs: number;
+						message?: string;
+					}>;
+			  }
+			| { ok: false; error: string };
+	};
+
+	/** 检查项(4E):项目资产(.jide/checks/)+ 临时 */
+	"checks.list": {
+		params: { workspaceId: string };
+		response:
+			| {
+					ok: true;
+					checks: Array<{
+						id: string;
+						title: string;
+						kind: "asset" | "temp";
+						/** 断言类型:http / browser / manual */
+						assertion:
+							| { type: "http"; url: string; expectStatus?: number; contains?: string }
+							| { type: "browser"; url: string; clickSelector?: string; expectContains?: string }
+							| { type: "manual"; note?: string };
+						/** diff 命中自动带上的路径模式 */
+						appliesTo?: string[];
+						lastResult?: { passed: boolean; at: string; evidence?: string };
+					}>;
+			  }
+			| { ok: false; error: string };
+	};
+	"checks.create": {
+		params: {
+			workspaceId: string;
+			title: string;
+			kind: "asset" | "temp";
+			assertion: {
+				type: "http" | "browser" | "manual";
+				url?: string;
+				expectStatus?: number;
+				contains?: string;
+				clickSelector?: string;
+				expectContains?: string;
+				note?: string;
+			};
+			appliesTo?: string[];
+		};
+		response: { ok: true; id: string } | { ok: false; error: string };
+	};
+	"checks.run": {
+		params: { workspaceId: string; ids?: string[] };
+		response:
+			| {
+					ok: true;
+					results: Array<{ id: string; title: string; passed: boolean; detail?: string; evidence?: string }>;
+			  }
+			| { ok: false; error: string };
+	};
+	"checks.delete": {
+		params: { workspaceId: string; id: string };
+		response: { ok: true } | { ok: false; error: string };
+	};
+
+	/** 浏览器自动化(4C):navigate/click/fill/capture(截图回传) */
+	"browser.navigate": {
+		params: { workspaceId: string; url: string };
+		response: { ok: true; title: string } | { ok: false; error: string };
+	};
+	"browser.click": {
+		params: { workspaceId: string; selector: string };
+		response: { ok: true } | { ok: false; error: string };
+	};
+	"browser.capture": {
+		params: { workspaceId: string; kind: "shot" };
+		response:
+			| { ok: true; /** base64 PNG */ dataBase64: string; path: string }
+			| { ok: false; error: string };
+	};
+
+	/** 运行三档(4F)①:Agent 自测 = 后台跑 选测+检查项 */
+	"run.agentSelfTest": {
+		params: { workspaceId: string };
+		response: { ok: true; summary: string } | { ok: false; error: string };
+	};
+
+	/** 评审队列(W6):自动提交等产出的人工门禁 */
+	"review.list": {
+		params: { projectId: string };
+		response:
+			| {
+					ok: true;
+					items: Array<{
+						id: string;
+						kind: "commit" | "memory" | "checks";
+						title: string;
+						detail: string;
+						/** commit 型:来源工作区与分支 */
+						workspaceId?: string;
+						branch?: string;
+						state: "pending" | "approved" | "asked" | "ignored";
+					}>;
+			  }
+			| { ok: false; error: string };
+	};
+	"review.decide": {
+		params: { id: string; decision: "approve" | "ask" | "ignore"; note?: string };
+		response:
+			| { ok: true; merged?: { sha: string; message: string } }
+			| { ok: false; error: string };
+	};
+
+	/** 人侧预览(4F ②):打开内嵌预览窗口(dev server URL,与 agent 共引擎) */
+	"preview.open": {
+		params: { url: string };
+		response: { ok: true } | { ok: false; error: string };
+	};
+
+	/** 把错误上下文(终端行/测试失败)送进对话(4F 错误一键问 agent) */
+	"session.askWithContext": {
+		params: {
+			workspaceId: string;
+			source: "terminal" | "test" | "preview";
+			contextText: string;
+			question?: string;
+		};
+		response: { ok: true } | { ok: false; error: string };
+	};
 }
 
 export type HostRequestMethod = keyof HostRequestShapes;
@@ -292,6 +484,43 @@ export type HostEvent =
 			steps: Array<{ text: string; state: "pending" | "doing" | "done"; commit?: string }>;
 	  }
 	| { type: "git.commits-updated"; seq: number; workspaceId: string }
+	| {
+			type: "devserver.status";
+			seq: number;
+			workspaceId: string;
+			state: "stopped" | "starting" | "ready" | "crashed";
+			url: string | null;
+			probeMode: string;
+	  }
+	| {
+			type: "test.progress";
+			seq: number;
+			workspaceId: string;
+			phase: "selecting" | "running" | "done";
+			selected: number;
+			total: number;
+			done: number;
+			passed: number;
+			failed: number;
+	  }
+	| {
+			type: "checks.updated";
+			seq: number;
+			workspaceId: string;
+			results: Array<{ id: string; title: string; passed: boolean; detail?: string }>;
+	  }
+	| {
+			type: "review.updated";
+			seq: number;
+			projectId: string;
+			pending: number;
+	  }
+	| {
+			type: "preview.request";
+			seq: number;
+			/** 宿主请求 UI 打开内嵌预览(人侧运行档) */
+			url: string;
+	  }
 	| { type: "host.log"; seq: number; level: "info" | "warn" | "error"; message: string };
 
 export type HostEventType = HostEvent["type"];
@@ -340,6 +569,11 @@ const EVENT_TYPES: ReadonlySet<string> = new Set<HostEventType>([
 	"terminal.exit",
 	"plan.updated",
 	"git.commits-updated",
+	"devserver.status",
+	"test.progress",
+	"checks.updated",
+	"review.updated",
+	"preview.request",
 	"host.log",
 ]);
 

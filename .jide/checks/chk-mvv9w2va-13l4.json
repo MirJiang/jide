@@ -1,0 +1,15 @@
+{
+	"id": "chk-mvv9w2va-13l4",
+	"title": "总额展示 89.70",
+	"kind": "asset",
+	"assertion": {
+		"type": "http",
+		"url": "http://127.0.0.1:19777/api/total",
+		"contains": "89.70"
+	},
+	"lastResult": {
+		"passed": true,
+		"at": "2026-10-30T17:55:27.241Z",
+		"evidence": "HTTP 200"
+	}
+}

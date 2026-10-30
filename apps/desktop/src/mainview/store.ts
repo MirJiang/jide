@@ -97,6 +97,13 @@ interface IDEStore {
 	logs: string[];
 	lastSeq: number;
 
+	reviewPending: number;
+	devserver: { state: string; url: string | null; probeMode: string };
+
+	askAgent(source: string, contextText: string, question: string): Promise<void>;
+	runTier(tier: "agent" | "human" | "cdp"): Promise<void>;
+	refreshReview(): Promise<void>;
+
 	boot(client: JideClient): Promise<void>;
 	openProject(path: string): Promise<void>;
 	trustProject(): Promise<void>;
@@ -125,6 +132,8 @@ interface IDEStore {
 	refreshGit(): Promise<void>;
 
 	handleEvent(event: HostEvent): void;
+
+	// ---- M3 ----
 }
 
 let nextMsgId = 1;
@@ -164,6 +173,9 @@ export const useIDE = create<IDEStore>((set, get) => ({
 
 	logs: [],
 	lastSeq: 0,
+
+	reviewPending: 0,
+	devserver: { state: "stopped", url: null, probeMode: "auto" },
 
 	async boot(client) {
 		set({ client });
@@ -461,6 +473,56 @@ export const useIDE = create<IDEStore>((set, get) => ({
 		}
 	},
 
+	async askAgent(source, contextText, question) {
+		// 4F:错误一键问 agent —— 切到对话页签,推入上下文芯片与问题
+		const { client, activeWorkspaceId } = get();
+		set({ activeTab: "chat" });
+		if (client && activeWorkspaceId) {
+			await client.request("session.askWithContext", { workspaceId: activeWorkspaceId, source, contextText, question });
+		}
+		set((st) => ({
+			logs: [...st.logs, "[ctx] " + source + " · " + contextText.slice(0, 80)],
+			chat: {
+				...st.chat,
+				messages: [
+					...st.chat.messages,
+					{ id: Math.random(), role: "user" as const, text: question + "\n(上下文:" + contextText.slice(0, 160) + ")" },
+				],
+			},
+		}));
+	},
+
+	async runTier(tier) {
+		const { client, activeWorkspaceId } = get();
+		if (!client || !activeWorkspaceId) return;
+		if (tier === "agent") {
+			// ① Agent 自测:后台静默,结果徽标+摘要
+			const r = await client.request("run.agentSelfTest", { workspaceId: activeWorkspaceId });
+			if (r.ok) {
+				set((st) => ({ logs: [...st.logs, "Agent 自测:" + r.summary] }));
+			}
+		} else if (tier === "human") {
+			// ② 人侧运行 + 预览:起 dev server(共享),宿主开预览窗口
+			const ds = await client.request("devserver.ensure", { workspaceId: activeWorkspaceId });
+			if (ds.ok) {
+				set({ devserver: { state: "ready", url: ds.url, probeMode: ds.probeMode } });
+				await client.request("preview.open", { url: ds.url });
+			}
+		} else {
+			// ③ CDP 后门:提示端点(断点调试器为非目标)
+			set((st) => ({ logs: [...st.logs, "③ CDP 后门:devtools 端点见 dev server 输出(/json/version)"] }));
+		}
+	},
+
+	async refreshReview() {
+		const { client, project } = get();
+		if (!client || !project) return;
+		const r = await client.request("review.list", { projectId: project.id });
+		if (r.ok) {
+			set({ reviewPending: r.items.filter((x: any) => x.state === "pending").length });
+		}
+	},
+
 	handleEvent(event) {
 		set({ lastSeq: event.seq });
 		switch (event.type) {
@@ -528,6 +590,17 @@ export const useIDE = create<IDEStore>((set, get) => ({
 				break;
 			case "git.commits-updated":
 				void get().refreshGit();
+				break;
+			case "devserver.status":
+				set({ devserver: { state: event.state, url: event.url, probeMode: event.probeMode } });
+				break;
+			case "review.updated":
+				void get().refreshReview();
+				break;
+			case "test.progress":
+				if (event.phase === "done") {
+					set((st) => ({ logs: [...st.logs, `测试完成:${event.passed} 通过 · ${event.failed} 失败(选测 ${event.selected}/${event.total})`] }));
+				}
 				break;
 			case "host.log":
 				set((s) => ({ logs: [...s.logs, `[${event.level}] ${event.message}`] }));

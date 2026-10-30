@@ -21,6 +21,13 @@ import { WorkspaceManager } from "./host/workspace-manager";
 import { FileService } from "./host/file-service";
 import { TerminalManager } from "./host/terminal-manager";
 import { PlanManager } from "./host/plan-manager";
+import { DevServerManager } from "./host/devserver-manager";
+import { BrowserAutomation } from "./host/browser-automation";
+import { ChecksManager } from "./host/checks-manager";
+import { ReviewQueue } from "./host/review-queue";
+import { HttpProbe, TestRunner, mapFilesToTests } from "./host/test-runner";
+import { readdirSync } from "node:fs";
+import { join as pathJoin } from "node:path";
 
 const DEV_SERVER_PORT = 5173;
 const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
@@ -73,6 +80,11 @@ const host = new AgentHost();
 const workspaces = new WorkspaceManager(RUNTIME_ROOT);
 const files = new FileService(workspaces);
 const terminals = new TerminalManager();
+const devservers = new DevServerManager();
+const browsers = new BrowserAutomation(RUNTIME_ROOT);
+const checks = new ChecksManager(browsers);
+const runner = new TestRunner();
+const review = new ReviewQueue(workspaces, RUNTIME_ROOT);
 const plans = new PlanManager(workspaces, RUNTIME_ROOT);
 
 const emit = (e: HostEvent) => {
@@ -84,6 +96,75 @@ host.bindEmitter(emit);
 workspaces.bindEmitter(emit);
 terminals.bindEmitter(emit);
 plans.bindEmitter(emit);
+plans.setReviewQueue(review as any);
+devservers.bindEmitter(emit);
+browsers.bindEmitter(emit);
+checks.bindEmitter(emit);
+review.bindEmitter(emit);
+checks.setCwdResolver((workspaceId) => workspaces.locate(workspaceId).cwd);
+
+function scanTestFiles(cwd: string): string[] {
+	const out: string[] = [];
+	const walk = (dir: string, rel: string, depth: number) => {
+		if (depth > 6) return;
+		let entries;
+		try {
+			entries = readdirSync(dir, { withFileTypes: true });
+		} catch {
+			return;
+		}
+		for (const e of entries) {
+			if (e.name === "node_modules" || e.name === ".git" || e.name === "build" || e.name === "dist" || e.name === ".hutch") continue;
+			const relPath = rel ? rel + "/" + e.name : e.name;
+			if (e.isDirectory()) walk(pathJoin(dir, e.name), relPath, depth + 1);
+			else if (/\.(test|spec)\.[tj]sx?$/.test(e.name)) out.push(relPath);
+		}
+	};
+	walk(cwd, "", 0);
+	return out;
+}
+
+function scanTestFiles(cwd: string): string[] {
+	const out: string[] = [];
+	const walk = (dir: string, rel: string, depth: number) => {
+		if (depth > 6) return;
+		let entries;
+		try {
+			entries = readdirSync(dir, { withFileTypes: true });
+		} catch {
+			return;
+		}
+		for (const e of entries) {
+			if (e.name === "node_modules" || e.name === ".git" || e.name === "build" || e.name === "dist" || e.name === ".hutch") continue;
+			const relPath = rel ? rel + "/" + e.name : e.name;
+			if (e.isDirectory()) walk(pathJoin(dir, e.name), relPath, depth + 1);
+			else if (/\.(test|spec)\.[tj]sx?$/.test(e.name)) out.push(relPath);
+		}
+	};
+	walk(cwd, "", 0);
+	return out;
+}
+
+function scanTestFiles(cwd: string): string[] {
+	const out: string[] = [];
+	const walk = (dir: string, rel: string, depth: number) => {
+		if (depth > 6) return;
+		let entries;
+		try {
+			entries = readdirSync(dir, { withFileTypes: true });
+		} catch {
+			return;
+		}
+		for (const e of entries) {
+			if (e.name === "node_modules" || e.name === ".git" || e.name === "build" || e.name === "dist" || e.name === ".hutch") continue;
+			const relPath = rel ? rel + "/" + e.name : e.name;
+			if (e.isDirectory()) walk(pathJoin(dir, e.name), relPath, depth + 1);
+			else if (/\.(test|spec)\.[tj]sx?$/.test(e.name)) out.push(relPath);
+		}
+	};
+	walk(cwd, "", 0);
+	return out;
+}
 
 const rpc = BrowserView.defineRPC<JideRPC>({
 	maxRequestTime: 120_000,
@@ -285,6 +366,131 @@ const rpc = BrowserView.defineRPC<JideRPC>({
 				const r = await workspaces.gitLog(workspaceId, limit);
 				return r.ok ? { ok: true, commits: r.commits } : { ok: false, error: r.error };
 			},
+
+			/* ---------- 测试域 M3(4A-4F) ---------- */
+			"devserver.ensure": async ({ workspaceId, command, cwd, port, probe, readyPattern }) => {
+				const loc = workspaces.locate(workspaceId);
+				if (!loc.cwd) return { ok: false, error: "工作区不存在" };
+				const trust = workspaces.requireTrusted(loc.projectId!);
+				if (!trust.ok) return { ok: false, error: trust.error };
+				try {
+					const r = await devservers.ensure(workspaceId, {
+						command: command ?? "bunx vite --port " + (port ?? 5175),
+						cwd: cwd ?? loc.cwd,
+						port: port ?? 5175,
+						probe: probe ?? "auto",
+						readyPattern,
+					});
+					return r.ok
+						? { ok: true, url: r.url, port: r.port, probeMode: r.probeMode, startedMs: r.startedMs }
+						: { ok: false, error: r.error, logTail: r.logTail };
+				} catch (err: any) {
+					return { ok: false, error: String(err?.message ?? err) };
+				}
+			},
+			"devserver.stop": ({ workspaceId }) => {
+				const r = devservers.stop(workspaceId);
+				return r.ok ? { ok: true } : { ok: false, error: r.error };
+			},
+			"devserver.status": ({ workspaceId }) => devservers.status(workspaceId),
+
+			"probe.http": ({ url, expectStatus, contains, jsonPath, jsonEquals }) =>
+				HttpProbe.run(url, { expectStatus, contains, jsonPath, jsonEquals }),
+
+			"test.run": async ({ workspaceId, scope, files }) => {
+				const loc = workspaces.locate(workspaceId);
+				if (!loc.cwd) return { ok: false, error: "工作区不存在" };
+				const trust = workspaces.requireTrusted(loc.projectId!);
+				if (!trust.ok) return { ok: false, error: trust.error };
+				const allTests = scanTestFiles(loc.cwd);
+				const changed: string[] = [];
+				if (scope !== "all") {
+					const st = await workspaces.gitStatus(workspaceId);
+					if (st.ok) changed.push(...st.changes.map((c) => c.path));
+					if (scope === "files" && files) changed.push(...files);
+				}
+				const selected = scope === "all" ? allTests : mapFilesToTests(changed, allTests);
+				emit({ type: "test.progress", workspaceId, phase: "selecting", selected: selected.length, total: allTests.length, done: 0, passed: 0, failed: 0 });
+				if (selected.length === 0 && scope !== "all") {
+					return { ok: true, selected: 0, total: allTests.length, durationMs: 0, results: [] };
+				}
+				const r = await runner.run(loc.cwd, scope === "all" ? allTests : selected, allTests.length);
+				const pass = r.results.filter((x) => x.status === "pass").length;
+				const fail = r.results.filter((x) => x.status === "fail").length;
+				emit({ type: "test.progress", workspaceId, phase: "done", selected: r.selected, total: r.total, done: r.results.length, passed: pass, failed: fail });
+				return r.ok
+					? { ok: true, selected: r.selected, total: r.total, durationMs: r.durationMs, results: r.results }
+					: { ok: false, error: "runner 失败" };
+			},
+
+			"checks.list": ({ workspaceId }) => ({ ok: true, checks: checks.list(workspaceId) }),
+			"checks.create": ({ workspaceId, title, kind, assertion, appliesTo }) => {
+				const r = checks.create(workspaceId, title, kind, assertion, appliesTo);
+				return r.ok ? { ok: true, id: r.id } : { ok: false, error: r.error };
+			},
+			"checks.run": ({ workspaceId, ids }) => checks.run(workspaceId, ids),
+			"checks.delete": ({ workspaceId, id }) => checks.delete(workspaceId, id),
+
+			"browser.navigate": async ({ workspaceId, url }) => {
+				try {
+					const r = await browsers.navigate(workspaceId, url);
+					return r.ok ? { ok: true, title: r.title } : { ok: false, error: r.error };
+				} catch (err: any) { return { ok: false, error: String(err?.message ?? err) }; }
+			},
+			"browser.click": async ({ workspaceId, selector }) => {
+				try {
+					return await browsers.click(workspaceId, selector);
+				} catch (err: any) { return { ok: false, error: String(err?.message ?? err) }; }
+			},
+			"browser.capture": async ({ workspaceId, kind }) => {
+				try {
+					return await browsers.capture(workspaceId, kind);
+				} catch (err: any) { return { ok: false, error: String(err?.message ?? err) }; }
+			},
+
+			"run.agentSelfTest": async ({ workspaceId }) => {
+				// ① Agent 自测:后台静默跑 选测 + 检查项(服务直调)
+				const loc = workspaces.locate(workspaceId);
+				if (!loc.cwd) return { ok: false, error: "工作区不存在" };
+				const allTests = scanTestFiles(loc.cwd);
+				const st = await workspaces.gitStatus(workspaceId);
+				const changed = st.ok ? st.changes.map((c) => c.path) : [];
+				const selected = mapFilesToTests(changed, allTests);
+				const t = selected.length
+					? await runner.run(loc.cwd, selected, allTests.length)
+					: { selected: 0, total: allTests.length, results: [] as any[] };
+				const c = await checks.run(workspaceId);
+				const pass = t.results.filter((x: any) => x.status === "pass").length;
+				const fail = t.results.filter((x: any) => x.status === "fail").length;
+				const cPass = c.results.filter((x: any) => x.passed).length;
+				const summary = `测试 ${pass}/${pass + fail}(选测 ${t.selected}/${t.total}) · 检查项 ${cPass}/${c.results.length}`;
+				return { ok: true, summary };
+			},
+
+			"review.list": ({ projectId }) => ({ ok: true, items: review.list(projectId) }),
+			"review.decide": ({ id, decision, note }) => review.decide(id, decision, note),
+
+			"preview.open": ({ url }) => {
+				// ② 人侧预览:内嵌窗口加载 dev server URL(与 agent 共用同一实例)
+				try {
+					if (previewWindow) (previewWindow as any).close?.();
+					previewWindow = new BrowserWindow({
+						title: "JIDE 预览",
+						url,
+						frame: { width: 520, height: 760, x: 1200, y: 120 },
+					});
+					emit({ type: "host.log", level: "info", message: "内嵌预览已打开:" + url });
+					return { ok: true };
+				} catch (err: any) {
+					return { ok: false, error: String(err?.message ?? err) };
+				}
+			},
+
+			"session.askWithContext": ({ workspaceId, source, contextText, question }) => {
+				const loc = workspaces.locate(workspaceId);
+				emit({ type: "host.log", level: "info", message: `[${source}] ${contextText.slice(0, 200)}` });
+				return { ok: true };
+			},
 		} satisfies HostRequestHandlers as any,
 		messages: {
 			resync: ({ lastSeq }) => {
@@ -293,6 +499,8 @@ const rpc = BrowserView.defineRPC<JideRPC>({
 		},
 	},
 });
+
+let previewWindow: BrowserWindow | null = null;
 
 const mainWindow = new BrowserWindow({
 	title: "JIDE",
@@ -308,6 +516,8 @@ const mainWindow = new BrowserWindow({
 
 mainWindow.on("close", () => {
 	terminals.disposeAll();
+	devservers.stopAll();
+	browsers.disposeAll();
 	host.disposeAll();
 });
 
@@ -339,4 +549,66 @@ if (process.env.JIDE_SMOKE_PLAN) {
 			console.log(`[jide:smoke-plan] err ${e}`);
 		}
 	}, 4000);
+}
+
+/* E2E 冒烟钩子 3:JIDE_SMOKE_M3=<workspaceId> 走完 M3 闭环(日志可断言) */
+if (process.env.JIDE_SMOKE_M3) {
+	const wid = process.env.JIDE_SMOKE_M3;
+	setTimeout(async () => {
+		try {
+			const srv = Bun.serve({
+				port: 19777,
+				hostname: "127.0.0.1",
+				fetch: (req) => {
+					const u = new URL(req.url);
+					if (u.pathname === "/api/total") return Response.json({ total: { yuan: "89.70", cents: 8970 } });
+					if (u.pathname === "/cart")
+						return new Response(
+							"<html><body><button id='add' onclick=\"this.textContent='added'\">加入购物车</button><div id='t'>89.70</div></body></html>",
+							{ headers: { "content-type": "text/html" } },
+						);
+					return new Response("OK");
+				},
+			});
+			const reqs = null; // 服务直调
+
+			// 4B HTTP 探测
+			const p = await HttpProbe.run("http://127.0.0.1:19777/api/total", { jsonPath: "total.yuan", jsonEquals: "89.70" });
+			console.log("[jide:smoke-m3] probe:", JSON.stringify(p));
+
+			// 4A dev server 就绪(http 探测模式)
+			const ds = await devservers.ensure(wid, { command: "bun -e \"await Bun.sleep(120000)\"", cwd: process.cwd(), port: 19777, probe: "http" });
+			console.log("[jide:smoke-m3] devserver:", JSON.stringify(ds).slice(0, 160));
+
+			// 4D 智能选测(真实 bun test:contracts 用例)
+			const allTests = scanTestFiles(workspaces.locate(wid).cwd ?? process.cwd());
+			const t = await runner.run(workspaces.locate(wid).cwd ?? process.cwd(), ["packages/contracts/src/index.test.ts"], allTests.length);
+			const tPass = t.results ? t.results.filter((x: any) => x.status === "pass").length : 0;
+			const tFail = t.ok ? t.results.filter((x: any) => x.status === "fail").length : 0;
+			console.log("[jide:smoke-m3] test:", t.ok ? "selected " + t.selected + "/" + t.total + " pass=" + tPass + " fail=" + tFail + " " + t.durationMs + "ms" : t.error);
+
+			// 4C 浏览器:navigate → click → capture(截图回传)
+			const nav = await browsers.navigate(wid, "http://127.0.0.1:19777/cart");
+			console.log("[jide:smoke-m3] browser nav:", JSON.stringify(nav));
+			const click = await browsers.click(wid, "#add");
+			console.log("[jide:smoke-m3] browser click:", JSON.stringify(click));
+			const cap = await browsers.capture(wid, "shot");
+			console.log("[jide:smoke-m3] capture:", cap.ok ? "ok " + Math.round((cap.dataBase64.length * 0.75) / 1024) + "KB -> " + cap.path : cap.error);
+
+			// 4E 检查项:创建资产 + 复验
+			checks.create(wid, "总额展示 89.70", "asset", { type: "http", url: "http://127.0.0.1:19777/api/total", contains: "89.70" });
+			const cr = await checks.run(wid);
+			console.log("[jide:smoke-m3] checks:", JSON.stringify(cr).slice(0, 220));
+
+			// ① Agent 自测(运行三档之一,后台静默)
+			const passN = t.ok ? t.results.filter((x: any) => x.status === "pass").length : 0;
+			const cPass = cr.ok ? cr.results.filter((x: any) => x.passed).length : 0;
+			console.log("[jide:smoke-m3] agentSelfTest: ok 测试 " + passN + "/" + (t.ok ? t.results.length : 0) + " · 检查项 " + cPass + "/" + (cr.ok ? cr.results.length : 0));
+
+			srv.stop(true);
+			console.log("[jide:smoke-m3] ALL DONE");
+		} catch (e) {
+			console.log("[jide:smoke-m3] ERR", e);
+		}
+	}, 5000);
 }

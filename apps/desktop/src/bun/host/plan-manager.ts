@@ -30,7 +30,7 @@ export class PlanManager {
 	private emit: EmitFn = () => {};
 	private storePath: string;
 
-	constructor(private workspaces: WorkspaceManager, runtimeRoot: string) {
+	constructor(private workspaces: WorkspaceManager, runtimeRoot: string, private review?: { enqueueCommit: (workspaceId: string, branch: string, sha: string, message: string) => void }) {
 		mkdirSync(runtimeRoot, { recursive: true });
 		this.storePath = join(runtimeRoot, "plans.json");
 		if (existsSync(this.storePath)) {
@@ -49,6 +49,11 @@ export class PlanManager {
 
 	private persist() {
 		writeFileSync(this.storePath, JSON.stringify([...this.plans.values()], null, "\t"));
+	}
+
+	/** W5→W6 联动:步骤自动提交入评审队列(人工门禁) */
+	setReviewQueue(review: { enqueueCommit: (workspaceId: string, branch: string, sha: string, message: string) => void }) {
+		this.review = review;
 	}
 
 	bindEmitter(emit: EmitFn) {
@@ -99,6 +104,8 @@ export class PlanManager {
 			if (r.ok) {
 				commit = { sha: r.sha, message: msg };
 				step.commit = r.sha;
+				// W5→W6:自动提交进入评审队列(人工门禁)
+				this.review?.enqueueCommit(plan.workspaceId, info.branch, r.sha, msg);
 			} else if (r.error !== "nothing to commit") {
 				// 提交失败步骤仍完成,但记录问题
 				this.emit({

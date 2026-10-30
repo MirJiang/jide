@@ -11,7 +11,8 @@ import { ActivityBar, SidebarPanel } from "./components/Sidebar";
 import { ChatPanel } from "./components/ChatPanel";
 import { CodeEditor } from "./components/CodeEditor";
 import { TerminalView } from "./components/TerminalView";
-import { PlanDock } from "./components/PlanDock";
+import { WorkflowDock } from "./components/WorkflowDock";
+import { TestPanel, ChecksPanel } from "./components/TestPanels";
 import { StatusBar } from "./components/StatusBar";
 import { TrustGate } from "./components/TrustGate";
 
@@ -129,8 +130,8 @@ export default function App() {
 								{(
 									[
 										["terminal", "终端"],
-										["tests", "测试(M3)"],
-										["checks", "检查项(M3)"],
+										["tests", "测试"],
+										["checks", "检查项"],
 									] as const
 								).map(([id, label]) => (
 									<button
@@ -150,18 +151,14 @@ export default function App() {
 								))}
 							</div>
 							<div className="relative min-h-0 flex-1">
-								{s.bottomTab === "terminal" ? (
-									<TerminalView />
-								) : (
-									<div className="flex h-full items-center justify-center text-[11px]" style={{ color: "var(--fg-faint)" }}>
-										{s.bottomTab === "tests" ? "测试面板在 M3 实装" : "检查项面板在 M3 实装"}
-									</div>
-								)}
+								{s.bottomTab === "terminal" && <TerminalView />}
+								{s.bottomTab === "tests" && <TestPanel />}
+								{s.bottomTab === "checks" && <ChecksPanel />}
 							</div>
 						</div>
 					)}
 				</section>
-				<PlanDock />
+				<WorkflowDock />
 			</div>
 			<StatusBar />
 			<TrustGate />

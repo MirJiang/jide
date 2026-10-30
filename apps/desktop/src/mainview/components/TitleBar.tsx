@@ -121,18 +121,45 @@ export function TitleBar() {
 						▶ 运行 ▾
 					</button>
 					{runOpen && (
-						<div
-							className="absolute right-0 top-[36px] z-50 min-w-[260px] rounded-lg border p-1"
-							style={{ background: "var(--bg2)", borderColor: "var(--line2)" }}
-							onClick={() => setRunOpen(false)}
-						>
-							<div className="px-2.5 py-2 text-[11px]" style={{ color: "var(--fg-faint)" }}>
-								运行三档在 M3 实装(Agent 自测 / 人侧预览 / CDP)
-							</div>
+						<div className="absolute right-0 top-[36px] z-50 min-w-[300px] rounded-lg border p-1" style={{ background: "var(--bg2)", borderColor: "var(--line2)" }}>
+							<RunMenuItem
+								label="① Agent 自测"
+								desc="后台静默跑选测 + 检查项,不打扰当前视图"
+								onClick={async () => {
+									setRunOpen(false);
+									await s.runTier("agent");
+								}}
+							/>
+							<RunMenuItem
+								label="② 人侧运行 + 预览"
+								desc="起 dev server 并打开内嵌预览(与 agent 共引擎)"
+								onClick={async () => {
+									setRunOpen(false);
+									await s.runTier("human");
+								}}
+							/>
+							<RunMenuItem
+								label="③ 调试(CDP 后门)"
+								desc="附着 CDP;断点调试器为非目标,仅协议后门"
+								onClick={async () => {
+									setRunOpen(false);
+									await s.runTier("cdp");
+								}}
+							/>
 						</div>
 					)}
 				</div>
 			</div>
 		</header>
+	);
+}
+
+
+function RunMenuItem({ label, desc, onClick }: { label: string; desc: string; onClick: () => void }) {
+	return (
+		<button className="flex w-full flex-col items-start gap-0.5 rounded-md px-2.5 py-2 text-left hover:bg-[var(--bg3)]" onClick={onClick}>
+			<span className="text-xs font-medium">{label}</span>
+			<span className="text-[11px]" style={{ color: "var(--fg-faint)" }}>{desc}</span>
+		</button>
 	);
 }
