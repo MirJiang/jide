@@ -29,6 +29,9 @@ export function StatusBar() {
 					{s.chat.status === "busy" ? "agent 运行中" : "agent 空闲"}
 				</span>
 				<span style={{ color: "var(--fg-faint)" }}>seq {s.lastSeq}</span>
+				<span className="flex items-center gap-1" title={"三级注入:项目 " + s.memoryBudget.projectK + "K · 用户 " + s.memoryBudget.userK + "K · 会话 " + s.memoryBudget.sessionK + "K"}>
+					✦ 记忆 {s.memoryBudget.totalK} / {s.memoryBudget.capK}K{s.memoryBudget.nearLimit ? " ⚠" : ""}
+				</span>
 			</div>
 		</footer>
 	);

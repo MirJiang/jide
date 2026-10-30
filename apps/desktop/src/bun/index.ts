@@ -25,6 +25,7 @@ import { DevServerManager } from "./host/devserver-manager";
 import { BrowserAutomation } from "./host/browser-automation";
 import { ChecksManager } from "./host/checks-manager";
 import { ReviewQueue } from "./host/review-queue";
+import { MemoryManager } from "./host/memory-manager";
 import { HttpProbe, TestRunner, mapFilesToTests } from "./host/test-runner";
 import { readdirSync } from "node:fs";
 import { join as pathJoin } from "node:path";
@@ -85,6 +86,19 @@ const browsers = new BrowserAutomation(RUNTIME_ROOT);
 const checks = new ChecksManager(browsers);
 const runner = new TestRunner();
 const review = new ReviewQueue(workspaces, RUNTIME_ROOT);
+const memories = new Map<string, MemoryManager>();
+
+const memoryFor = (workspaceId: string): MemoryManager | null => {
+	const { cwd } = workspaces.locate(workspaceId);
+	if (!cwd) return null;
+	let m = memories.get(workspaceId);
+	if (!m) {
+		m = new MemoryManager(cwd);
+		m.bindEmitter(emit);
+		memories.set(workspaceId, m);
+	}
+	return m;
+};
 const plans = new PlanManager(workspaces, RUNTIME_ROOT);
 
 const emit = (e: HostEvent) => {
@@ -188,9 +202,20 @@ const rpc = BrowserView.defineRPC<JideRPC>({
 			},
 			"session.create": async ({ workspacePath, demoMode }) => {
 				try {
+					// M4:三级注入(项目层/用户层预算内)+ AGENTS.md(只读)
+					let memoryContext: string | undefined;
+					let agentsMd: string | null = null;
+					const memByPath = [...memories.entries()].find(([, m]) => (m as any).cwd === workspacePath)?.[1];
+					if (memByPath) {
+						const inj = memByPath.inject([]);
+						memoryContext = inj.text || undefined;
+						agentsMd = memByPath.readAgents();
+					}
 					const entry = await host.createSession({
 						workspacePath,
 						demoMode: demoMode ?? DEMO_DEFAULT,
+						memoryContext,
+						agentsMd,
 					});
 					return {
 						ok: true,
@@ -491,6 +516,51 @@ const rpc = BrowserView.defineRPC<JideRPC>({
 				emit({ type: "host.log", level: "info", message: `[${source}] ${contextText.slice(0, 200)}` });
 				return { ok: true };
 			},
+
+			/* ---------- 记忆域 M4 ---------- */
+			"memory.status": ({ workspaceId }) => {
+				const m = memoryFor(workspaceId);
+				if (!m) return { ok: false, error: "工作区不存在" };
+				return {
+					ok: true,
+					budget: m.budget(),
+					entries: m.list().map((e) => ({ scope: e.scope, file: e.file, source: e.source, lines: e.lines, lastHit: e.lastHit })),
+					agentsMd: m.readAgents(),
+				};
+			},
+			"memory.suggest": ({ workspaceId, scope, file, lines, reason }) => {
+				const m = memoryFor(workspaceId);
+				if (!m) return { ok: false, error: "工作区不存在" };
+				const s = m.suggest(scope, file, lines, reason);
+				return { ok: true, suggestionId: s.id };
+			},
+			"memory.decide": ({ suggestionId, action, editedLines }) => {
+				for (const m of memories.values()) {
+					if (action === "adopt") {
+						const r = m.adopt(suggestionId, editedLines);
+						if (r.ok) return r;
+					} else {
+						const r = m.ignore(suggestionId);
+						if (r.ok) return r;
+					}
+				}
+				return { ok: false, error: "建议不存在" };
+			},
+			"memory.tidy": ({ workspaceId }) => {
+				const m = memoryFor(workspaceId);
+				if (!m) return { ok: false, error: "工作区不存在" };
+				return m.tidy();
+			},
+			"memory.revertTidy": ({ workspaceId }) => {
+				const m = memoryFor(workspaceId);
+				if (!m) return { ok: false, error: "工作区不存在" };
+				return { ok: true, restored: m.revertTidy() };
+			},
+			"memory.recall": ({ workspaceId, keywords }) => {
+				const m = memoryFor(workspaceId);
+				if (!m) return { ok: false, error: "工作区不存在" };
+				return { ok: true, hits: m.recallKeywords(keywords) };
+			},
 		} satisfies HostRequestHandlers as any,
 		messages: {
 			resync: ({ lastSeq }) => {
@@ -609,6 +679,43 @@ if (process.env.JIDE_SMOKE_M3) {
 			console.log("[jide:smoke-m3] ALL DONE");
 		} catch (e) {
 			console.log("[jide:smoke-m3] ERR", e);
+		}
+	}, 5000);
+}
+
+/* E2E 冒烟钩子 4:JIDE_SMOKE_M4=<workspaceId> 走完 M4 闭环 */
+if (process.env.JIDE_SMOKE_M4) {
+	const m4wid = process.env.JIDE_SMOKE_M4;
+	setTimeout(async () => {
+		try {
+			const m = memoryFor(m4wid)!;
+			// 建议卡片:提议 → 采纳
+			const sg = m.suggest("project", "conventions.md", ["金额一律以「分」为整数单位计算,展示用 toFixed(2)", "浮点金额断言:期望值写字面量"], "会话沉淀:购物车修复");
+			const adopt = m.adopt(sg.id);
+			console.log("[jide:smoke-m4] adopt:", JSON.stringify(adopt));
+			// 预算
+			const inj = m.inject([]);
+			console.log("[jide:smoke-m4] budget:", JSON.stringify(inj.budget), "chars:", inj.text.length);
+			// 召回(命中更新 lastHit)
+			const hits = m.recallKeywords(["分", "toFixed"]);
+			console.log("[jide:smoke-m4] recall hits:", hits.length, hits[0]?.line?.slice(0, 30));
+			// AGENTS.md 只读
+			console.log("[jide:smoke-m4] agentsMd readonly:", m.readAgents()?.slice(0, 40) ?? "(none)");
+			// 建议卡片三动作(忽略/改后采纳在 UI;这里验证第二条建议走 adopt-with-edit)
+			const sg2 = m.suggest("user", "feedback.md", ["原始稿"], "编辑演示");
+			const editAdopt = m.adopt(sg2.id, ["用户改后的稿子"]);
+			console.log("[jide:smoke-m4] adopt-edited:", JSON.stringify(editAdopt));
+			// 整理 + 回退
+			const tidy = m.tidy();
+			console.log("[jide:smoke-m4] tidy:", JSON.stringify({ before: tidy.before, after: tidy.after, changed: tidy.changed.length }));
+			const reverted = m.revertTidy();
+			console.log("[jide:smoke-m4] revertTidy restored:", reverted);
+			// 注入进新会话(session.create 路径带 memoryContext)
+			const entry = await host.createSession({ workspacePath: workspaces.locate(m4wid).cwd ?? "", demoMode: true, memoryContext: m.inject([]).text, agentsMd: m.readAgents() });
+			console.log("[jide:smoke-m4] session with memory created:", entry.sessionId.slice(0, 8));
+			console.log("[jide:smoke-m4] ALL DONE");
+		} catch (e) {
+			console.log("[jide:smoke-m4] ERR", e);
 		}
 	}, 5000);
 }

@@ -408,6 +408,51 @@ export interface HostRequestShapes {
 		response: { ok: true } | { ok: false; error: string };
 	};
 
+	/* ---------------- 记忆域 M4(§5) ---------------- */
+
+	"memory.status": {
+		params: { workspaceId: string };
+		response:
+			| {
+					ok: true;
+					budget: { projectK: number; userK: number; sessionK: number; totalK: number; capK: number; nearLimit: boolean };
+					entries: Array<{ scope: "project" | "user"; file: string; source: string; lines: string[]; lastHit?: string }>;
+					agentsMd: string | null;
+			  }
+			| { ok: false; error: string };
+	};
+	/** 建议卡片:agent/会话沉淀提议(默认不静默写) */
+	"memory.suggest": {
+		params: { workspaceId: string; scope: "project" | "user"; file: string; lines: string[]; reason: string };
+		response: { ok: true; suggestionId: string } | { ok: false; error: string };
+	};
+	/** 三动作:采纳(editedLines=改后采纳)/忽略 */
+	"memory.decide": {
+		params: { suggestionId: string; action: "adopt" | "ignore"; editedLines?: string[] };
+		response:
+			| { ok: true; wrote?: string }
+			| { ok: false; error: string };
+	};
+	/** 整理:合并重复/淘汰过时,返回前后对照 */
+	"memory.tidy": {
+		params: { workspaceId: string };
+		response:
+			| { ok: true; before: number; after: number; changed: Array<{ scope: string; file: string; removed: string[] }> }
+			| { ok: false; error: string };
+	};
+	/** 整理回退(.bak) */
+	"memory.revertTidy": {
+		params: { workspaceId: string };
+		response: { ok: true; restored: number } | { ok: false; error: string };
+	};
+	/** 关键词召回(命中更新 lastHit,返回命中行) */
+	"memory.recall": {
+		params: { workspaceId: string; keywords: string[] };
+		response:
+			| { ok: true; hits: Array<{ scope: "project" | "user"; file: string; line: string }> }
+			| { ok: false; error: string };
+	};
+
 	/** 把错误上下文(终端行/测试失败)送进对话(4F 错误一键问 agent) */
 	"session.askWithContext": {
 		params: {
@@ -521,6 +566,20 @@ export type HostEvent =
 			/** 宿主请求 UI 打开内嵌预览(人侧运行档) */
 			url: string;
 	  }
+	| {
+			type: "memory.suggested";
+			seq: number;
+			suggestionId: string;
+			scope: "project" | "user";
+			file: string;
+			lines: string[];
+			reason: string;
+	  }
+	| {
+			type: "memory.updated";
+			seq: number;
+			budget: { projectK: number; userK: number; sessionK: number; totalK: number; capK: number; nearLimit: boolean };
+	  }
 	| { type: "host.log"; seq: number; level: "info" | "warn" | "error"; message: string };
 
 export type HostEventType = HostEvent["type"];
@@ -574,6 +633,8 @@ const EVENT_TYPES: ReadonlySet<string> = new Set<HostEventType>([
 	"checks.updated",
 	"review.updated",
 	"preview.request",
+	"memory.suggested",
+	"memory.updated",
 	"host.log",
 ]);
 

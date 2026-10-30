@@ -12,9 +12,11 @@
  */
 
 import { mkdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import {
 	createAgentSession,
+	DefaultResourceLoader,
 	SessionManager,
 	type AgentSession,
 	type AgentSessionEvent,
@@ -41,6 +43,9 @@ export interface SessionEntry {
 export interface CreateSessionOptions {
 	workspacePath: string;
 	demoMode: boolean;
+	/** 三级注入文本(M4);连同 AGENTS.md(只读)一并作为 context files */
+	memoryContext?: string;
+	agentsMd?: string | null;
 }
 
 export type EmitFn = (event: HostEvent) => void;
@@ -170,9 +175,28 @@ export class AgentHost {
 		const dir = this.sessionDir(cwd);
 
 		const manager = SessionManager.create(cwd, dir);
+		const contextFiles: Array<{ path: string; content: string }> = [];
+		if (opts.agentsMd) contextFiles.push({ path: join(cwd, "AGENTS.md"), content: opts.agentsMd });
+		if (opts.memoryContext) contextFiles.push({ path: "/virtual/.memory/inject.md", content: opts.memoryContext });
+		const resourceLoader = contextFiles.length
+			? new DefaultResourceLoader({
+					cwd,
+					agentDir: process.env.PI_AGENT_DIR ?? join(homedir(), ".pi", "agent"),
+					settingsManager: undefined as any,
+					agentsFilesOverride: (base) => ({
+						agentsFiles: [
+							// AGENTS.md(用户手写,只读)保留在首位
+							...base.agentsFiles.filter((f) => !f.path.endsWith("AGENTS.md") && !f.path.endsWith("CLAUDE.md")),
+							...contextFiles,
+						],
+					}),
+				} as any)
+			: undefined;
+
 		const { session, modelFallbackMessage } = await createAgentSession({
 			cwd,
 			sessionManager: manager,
+			...(resourceLoader ? { resourceLoader } : {}),
 			...(opts.demoMode ? await createDemoRuntime() : {}),
 		});
 

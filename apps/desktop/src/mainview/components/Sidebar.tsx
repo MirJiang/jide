@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useIDE } from "../store";
+import { MemoryPanel } from "./MemoryPanel";
 
 const PANEL_TITLES: Record<string, string> = {
 	files: "资源管理器",
@@ -203,11 +204,7 @@ export function SidebarPanel() {
 						搜索在 M2 后续版本实装(编辑器内 Ctrl+F 可用)。
 					</div>
 				)}
-				{sidebar === "memory" && (
-					<div className="px-3 py-3 text-[11px]" style={{ color: "var(--fg-faint)" }}>
-						记忆域在 M4 实装(建议卡片 / 三级注入 / 整理)。
-					</div>
-				)}
+				{sidebar === "memory" && <MemoryPanel />}
 			</div>
 		</aside>
 	);

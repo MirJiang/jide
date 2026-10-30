@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useIDE } from "../store";
+import { MemorySuggestionCard } from "./MemoryPanel";
 
 const STATUS_LABEL: Record<string, string> = {
 	idle: "空闲",
@@ -101,6 +102,9 @@ export function ChatPanel() {
 							</div>
 						),
 					)}
+					{s.memorySuggestions.map((sg) => (
+						<MemorySuggestionCard key={sg.suggestionId} suggestion={sg} />
+					))}
 					{s.chat.streaming && (
 						<div
 							className="self-start rounded-lg border px-3 py-2"

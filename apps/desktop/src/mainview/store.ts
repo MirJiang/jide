@@ -98,6 +98,8 @@ interface IDEStore {
 	lastSeq: number;
 
 	reviewPending: number;
+	memoryBudget: { projectK: number; userK: number; sessionK: number; totalK: number; capK: number; nearLimit: boolean };
+	memorySuggestions: Array<{ suggestionId: string; file: string; lines: string[]; reason: string }>;
 	devserver: { state: string; url: string | null; probeMode: string };
 
 	askAgent(source: string, contextText: string, question: string): Promise<void>;
@@ -175,6 +177,8 @@ export const useIDE = create<IDEStore>((set, get) => ({
 	lastSeq: 0,
 
 	reviewPending: 0,
+	memoryBudget: { projectK: 0, userK: 0, sessionK: 0, totalK: 0, capK: 2, nearLimit: false },
+	memorySuggestions: [],
 	devserver: { state: "stopped", url: null, probeMode: "auto" },
 
 	async boot(client) {
@@ -593,6 +597,14 @@ export const useIDE = create<IDEStore>((set, get) => ({
 				break;
 			case "devserver.status":
 				set({ devserver: { state: event.state, url: event.url, probeMode: event.probeMode } });
+				break;
+			case "memory.suggested":
+				set((st) => ({
+					memorySuggestions: [...st.memorySuggestions, { suggestionId: event.suggestionId, file: event.file, lines: event.lines, reason: event.reason }],
+				}));
+				break;
+			case "memory.updated":
+				set({ memoryBudget: event.budget });
 				break;
 			case "review.updated":
 				void get().refreshReview();
