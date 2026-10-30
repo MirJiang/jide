@@ -109,6 +109,18 @@ export function TitleBar() {
 					<span className="text-[9.5px]" style={{ color: "var(--fg-faint)" }}>变更</span>
 					<span className="text-xs font-medium">{s.git.changes.length || "—"}</span>
 				</div>
+				{/* 独立操作按钮(§6):同步 = fetch + 状态刷新;拉取请求留位 */}
+				<button
+					className="flex items-center gap-1 px-3 text-xs"
+					style={{ color: "var(--orange)", borderRight: "1px solid var(--line)" }}
+					title="git fetch --all + 刷新状态(评审通过后自动并入主线)"
+					onClick={() => {
+						void s.client?.request("git.status", { workspaceId: s.activeWorkspaceId ?? "" });
+						void s.refreshGit();
+					}}
+				>
+					⟳ 同步
+				</button>
 			</div>
 
 			<div className="flex items-center gap-2 pr-1">
