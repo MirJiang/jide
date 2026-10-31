@@ -31,7 +31,7 @@ import { CredentialStore } from "./host/credential-store";
 import { createGuardExtension } from "./host/guard-extension";
 import { mapFilesToTests as mapTests } from "./host/test-runner";
 import { HttpProbe, TestRunner, mapFilesToTests } from "./host/test-runner";
-import { readFileSync, readdirSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { join as pathJoin } from "node:path";
 
 const DEV_SERVER_PORT = 5173;
@@ -346,9 +346,22 @@ const rpc = BrowserView.defineRPC<JideRPC>({
 			},
 			"workspace.create": async ({ projectId, name, fromRef }) => {
 				const r = await workspaces.createWorktree(projectId, name, fromRef);
-				return r.ok
-					? { ok: true, workspaceId: r.workspaceId, path: r.path, branch: r.branch }
-					: { ok: false, error: r.error };
+				if (!r.ok) return { ok: false, error: r.error };
+				// W3 会话模板:把源工作区最近一条会话复制到新工作区会话目录(agent 上下文延续)
+				try {
+					const rec = workspaces.getProject(projectId);
+					if (rec) {
+						const srcDir = join(RUNTIME_ROOT, "sessions", rec.root.replace(/[^a-zA-Z0-9_-]+/g, "--"));
+						const destDir = join(RUNTIME_ROOT, "sessions", r.path.replace(/[^a-zA-Z0-9_-]+/g, "--"));
+						const files = readdirSync(srcDir).filter((f) => f.endsWith(".jsonl")).sort();
+						const latest = files[files.length - 1];
+						if (latest) {
+							mkdirSync(destDir, { recursive: true });
+							copyFileSync(join(srcDir, latest), join(destDir, latest));
+						}
+					}
+				} catch { /* 无源会话 */ }
+				return { ok: true, workspaceId: r.workspaceId, path: r.path, branch: r.branch };
 			},
 			"workspace.switch": async ({ projectId, workspaceId }) => {
 				const r = await workspaces.switchWorkspace(projectId, workspaceId);

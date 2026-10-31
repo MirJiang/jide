@@ -8,7 +8,7 @@
  * git 操作走 git CLI(Bun.spawn),全部集中在 runGit()。
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 import type { EmitFn } from "./agent-host";
 
@@ -30,6 +30,16 @@ export interface WorkspaceInfo {
 
 interface TrustStore {
 	projects: Record<string, ProjectRecord>;
+}
+
+function copyDirSync(src: string, dest: string) {
+	mkdirSync(dest, { recursive: true });
+	for (const e of readdirSync(src, { withFileTypes: true })) {
+		const s = join(src, e.name);
+		const d = join(dest, e.name);
+		if (e.isDirectory()) copyDirSync(s, d);
+		else copyFileSync(s, d);
+	}
 }
 
 async function runGit(cwd: string, args: string[]): Promise<{ code: number; out: string; err: string }> {
@@ -183,6 +193,15 @@ export class WorkspaceManager {
 		const ref = fromRef ?? "HEAD";
 		const r = await runGit(rec.root, ["worktree", "add", "-b", branch, wtPath, ref]);
 		if (r.code !== 0) return { ok: false as const, error: `git worktree add 失败:${r.err || r.out}` };
+
+		// W3:创建即复制工作区上下文(检查项 .jide/checks 与记忆 .memory —— 未提交的也带上)
+		for (const rel of [".jide/checks", ".memory"]) {
+			const src = join(rec.root, rel);
+			if (!existsSync(src)) continue;
+			try {
+				copyDirSync(src, join(wtPath, rel));
+			} catch { /* 复制失败不阻塞创建 */ }
+		}
 		await this.listWorkspaces(projectId); // 刷缓存
 		this.emit({ type: "host.log", level: "info", message: `隔离工作区已创建:${branch}` });
 		return {

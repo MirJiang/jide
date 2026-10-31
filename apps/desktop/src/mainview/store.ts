@@ -17,7 +17,7 @@ export interface ChatMessage {
 }
 
 export interface EditorTab {
-	kind: "chat" | "file" | "diff";
+	kind: "chat" | "file" | "diff" | "preview";
 	/** file: 工作区相对路径 */
 	path?: string;
 	title: string;
@@ -121,6 +121,7 @@ interface IDEStore {
 	openFile(path: string): Promise<void>;
 	openDiff(path: string): Promise<void>;
 	diffTabKey(path: string): string;
+	openPreview(url: string): void;
 	setActiveTab(key: string): void;
 	closeTab(key: string): void;
 	saveActiveTab(): Promise<void>;
