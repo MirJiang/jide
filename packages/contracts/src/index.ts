@@ -369,6 +369,32 @@ export interface HostRequestShapes {
 			| { ok: true; /** base64 PNG */ dataBase64: string; path: string }
 			| { ok: false; error: string };
 	};
+	"browser.hover": {
+		params: { workspaceId: string; selector: string };
+		response: { ok: true } | { ok: false; error: string };
+	};
+	"browser.scroll": {
+		params: { workspaceId: string; x: number; y: number; selector?: string };
+		response: { ok: true } | { ok: false; error: string };
+	};
+	"browser.snapshot": {
+		params: { workspaceId: string };
+		response:
+			| { ok: true; outline: string }
+			| { ok: false; error: string };
+	};
+	"browser.console": {
+		params: { workspaceId: string; limit?: number };
+		response:
+			| { ok: true; messages: string[] }
+			| { ok: false; error: string };
+	};
+	"browser.record": {
+		params: { workspaceId: string; ms: number; intervalMs?: number };
+		response:
+			| { ok: true; frames: number; dir: string }
+			| { ok: false; error: string };
+	};
 
 	/** 运行三档(4F)①:Agent 自测 = 后台跑 选测+检查项 */
 	"run.agentSelfTest": {

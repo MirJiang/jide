@@ -35,6 +35,11 @@ export interface ToolContext {
 		click: (workspaceId: string, selector: string) => Promise<any>;
 		fill: (workspaceId: string, selector: string, value: string) => Promise<any>;
 		capture: (workspaceId: string, kind?: "shot") => Promise<any>;
+		hover: (workspaceId: string, selector: string) => Promise<any>;
+		scroll: (workspaceId: string, x: number, y: number, selector?: string) => Promise<any>;
+		snapshot: (workspaceId: string) => Promise<any>;
+		console: (workspaceId: string, limit?: number) => string[];
+		record: (workspaceId: string, ms: number, intervalMs?: number) => Promise<any>;
 	};
 	checks: {
 		run: (workspaceId: string, ids?: string[]) => Promise<any>;
@@ -131,7 +136,15 @@ export function buildJideTools(ctx: ToolContext) {
 				Type.Literal("click"),
 				Type.Literal("fill"),
 				Type.Literal("capture"),
+				Type.Literal("hover"),
+				Type.Literal("scroll"),
+				Type.Literal("snapshot"),
+				Type.Literal("console"),
+				Type.Literal("record"),
 			]),
+			x: Type.Optional(Type.Number()),
+			y: Type.Optional(Type.Number()),
+			ms: Type.Optional(Type.Number()),
 			url: Type.Optional(Type.String()),
 			selector: Type.Optional(Type.String({ description: "CSS 选择器" })),
 			value: Type.Optional(Type.String()),
@@ -161,7 +174,33 @@ export function buildJideTools(ctx: ToolContext) {
 							? { content: [{ type: "text", text: `已填写 ${p.selector}` }] }
 							: { content: [{ type: "text", text: r.error }], isError: true };
 					}
-					if (p.action === "capture") {
+					if (p.action === "hover" && p.selector) {
+					const r = await ctx.browsers.hover(ctx.workspaceId, p.selector);
+					return r.ok
+						? { content: [{ type: "text", text: "已 hover " + p.selector }] }
+						: { content: [{ type: "text", text: r.error }], isError: true };
+				}
+				if (p.action === "scroll") {
+					const r = await ctx.browsers.scroll(ctx.workspaceId, p.x ?? 0, p.y ?? 300, p.selector);
+					return { content: [{ type: "text", text: "已滚动" }] };
+				}
+				if (p.action === "snapshot") {
+					const r = await ctx.browsers.snapshot(ctx.workspaceId);
+					return r.ok
+						? { content: [{ type: "text", text: "DOM 快照:\n" + r.outline.slice(0, 2000) }] }
+						: { content: [{ type: "text", text: r.error }], isError: true };
+				}
+				if (p.action === "console") {
+					const msgs = ctx.browsers.console(ctx.workspaceId, 30);
+					return { content: [{ type: "text", text: msgs.length ? msgs.join("\n") : "(控制台无输出)" }] };
+				}
+				if (p.action === "record" && p.ms) {
+					const r = await ctx.browsers.record(ctx.workspaceId, Math.min(p.ms, 30000), 500);
+					return r.ok
+						? { content: [{ type: "text", text: "录屏 " + r.frames + " 帧 → " + r.dir + "(replay.html 可回放)" }] }
+						: { content: [{ type: "text", text: r.error }], isError: true };
+				}
+				if (p.action === "capture") {
 						const r = await ctx.browsers.capture(ctx.workspaceId, "shot");
 						return r.ok
 							? { content: [{ type: "text", text: `截图已回传:${r.path}(${Math.round((r.dataBase64.length * 0.75) / 1024)}KB)` }] }

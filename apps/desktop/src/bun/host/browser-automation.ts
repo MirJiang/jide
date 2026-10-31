@@ -179,6 +179,9 @@ export class BrowserAutomation {
 		(engine as any).sendSession = sendSession;
 		await sendSession("Page.enable");
 		await sendSession("Runtime.enable");
+		// 控制台监听随导航重建
+		(engine as any).currentTarget = targetId;
+		this.subscribeConsole(engine, workspaceId);
 		const loaded = new Promise<void>((resolve) => {
 			const ws = engine.ws!;
 			const onMsg = (ev: MessageEvent) => {
@@ -247,6 +250,109 @@ export class BrowserAutomation {
 		);
 		if (!filled?.found) return { ok: false as const, error: `元素不存在:${selector}` };
 		return { ok: true as const };
+	}
+
+	/** hover(§4C):模拟移入 */
+	async hover(workspaceId: string, selector: string) {
+		const r = await this.eval(
+			workspaceId,
+			`(() => {
+				const el = document.querySelector(${JSON.stringify(selector)});
+				if (!el) return { found: false };
+				el.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+				el.dispatchEvent(new MouseEvent("mouseenter", { bubbles: false }));
+				return { found: true };
+			})()`,
+		);
+		if (!r?.found) return { ok: false as const, error: "元素不存在:" + selector };
+		return { ok: true as const };
+	}
+
+	/** scroll(§4C):按像素滚动页面或元素 */
+	async scroll(workspaceId: string, x: number, y: number, selector?: string) {
+		await this.eval(
+			workspaceId,
+			`(() => {
+				const target = ${selector ? "document.querySelector(" + JSON.stringify(selector) : "window"};
+				void target;
+				const el = ${selector ? "document.querySelector(" + JSON.stringify(selector) + ")" : "document.scrollingElement"};
+				if (el) el.scrollTop += ${Math.round(y)};
+				if (el) el.scrollLeft += ${Math.round(x)};
+				return true;
+			})()`,
+		);
+		return { ok: true as const };
+	}
+
+	/** 控制台监听(§4C):收集 console 消息(Runtime.consoleAPICalled) */
+	consoleMessages(workspaceId: string, limit = 50): string[] {
+		const buf = (this as any).__consoleBuf?.get(workspaceId) ?? [];
+		return buf.slice(-limit);
+	}
+
+	/** 订阅控制台(页面级;导航后需重订 —— 由 navigate 自动做) */
+	private subscribeConsole(engine: Engine, workspaceId: string) {
+		if (!(this as any).__consoleBuf) (this as any).__consoleBuf = new Map();
+		const buf: string[] = [];
+		(this as any).__consoleBuf.set(workspaceId, buf);
+		const ws = engine.ws!;
+		const onMsg = (ev: MessageEvent) => {
+			try {
+				const m = JSON.parse(String(ev.data));
+				if (m.method === "Runtime.consoleAPICalled" && m.sessionId === (engine as any)[`sess-${(engine as any).currentTarget}`]) {
+					const text = (m.params.args ?? []).map((a: any) => a.value ?? a.description ?? "").join(" ");
+					buf.push(`[${m.params.type}] ${text}`);
+					if (buf.length > 200) buf.splice(0, buf.length - 200);
+				}
+			} catch {}
+		};
+		ws.addEventListener("message", onMsg as any);
+	}
+
+	/** DOM 快照(§4C):结构化大纲(tag#id.class,深度 4) */
+	async snapshot(workspaceId: string): Promise<{ ok: true; outline: string } | { ok: false; error: string }> {
+		const outline = await this.eval(
+			workspaceId,
+			`(() => {
+				const lines = [];
+				const walk = (el, depth) => {
+					if (depth > 4 || lines.length > 200) return;
+					const id = el.id ? "#" + el.id : "";
+					const cls = el.classList?.length ? "." + [...el.classList].slice(0, 2).join(".") : "";
+					const txt = (el.children.length === 0 && el.textContent?.trim()) ? " " + el.textContent.trim().slice(0, 30) : "";
+					lines.push("  ".repeat(depth) + el.tagName.toLowerCase() + id + cls + txt);
+					for (const c of el.children) walk(c, depth + 1);
+				};
+				walk(document.body, 0);
+				return lines.join("\n");
+			})()`,
+		);
+		return { ok: true, outline: String(outline ?? "") };
+	}
+
+	/** 录屏回放(§4C):间隔截图收集帧 + 生成可回放 HTML */
+	async record(workspaceId: string, ms: number, intervalMs = 500) {
+		const engine = this.engines.get(workspaceId);
+		if (!engine || !(engine as any).sendSession) return { ok: false as const, error: "尚未导航" };
+		const dir = join(this.runtimeRoot, "browser-recordings", workspaceId.replace(/[^a-zA-Z0-9]/g, "_") + "-" + Date.now());
+		mkdirSync(dir, { recursive: true });
+		const frames: string[] = [];
+		const t0 = Date.now();
+		while (Date.now() - t0 < ms) {
+			const res = await (engine as any).sendSession("Page.captureScreenshot", { format: "jpeg", quality: 60 });
+			const f = "frame-" + String(frames.length).padStart(4, "0") + ".jpg";
+			writeFileSync(join(dir, f), Buffer.from(res.data, "base64"));
+			frames.push(f);
+			await new Promise((r) => setTimeout(r, intervalMs));
+		}
+		// 回放器(逐帧 HTML)
+		const html =
+			"<!doctype html><meta charset=utf-8><body style=margin:0;background:#111;text-align:center>" +
+			'<img id=f style=max-width:100%><div id=c style=color:#888;font:12px monospace></div>' +
+			'<script>const F=' + JSON.stringify(frames) + ";let i=0;" +
+			"setInterval(()=>{if(i>=F.length)i=0;f.src=F[i++];c.textContent=i+'/'+F.length},400)</script></body>";
+		writeFileSync(join(dir, "replay.html"), html);
+		return { ok: true as const, frames: frames.length, dir };
 	}
 
 	async textContent(workspaceId: string) {

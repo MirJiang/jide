@@ -104,7 +104,17 @@ const toolContextFor = (workspaceId: string, cwd: string) => ({
 		const st = await workspaces.gitStatus(wid);
 		return st.ok ? st.changes.map((c) => c.path) : [];
 	},
-	browsers,
+	browsers: {
+		navigate: browsers.navigate.bind(browsers),
+		click: browsers.click.bind(browsers),
+		fill: browsers.fill.bind(browsers),
+		capture: browsers.capture.bind(browsers),
+		hover: browsers.hover.bind(browsers),
+		scroll: browsers.scroll.bind(browsers),
+		snapshot: browsers.snapshot.bind(browsers),
+		console: (wid: string, limit?: number) => browsers.consoleMessages(wid, limit),
+		record: browsers.record.bind(browsers),
+	},
 	checks,
 	plans: {
 		create: (wid: string, goal: string, steps: string[]) => plans.create(wid, goal, steps).id,
@@ -514,6 +524,24 @@ const rpc = BrowserView.defineRPC<JideRPC>({
 					return await browsers.click(workspaceId, selector);
 				} catch (err: any) { return { ok: false, error: String(err?.message ?? err) }; }
 			},
+			"browser.hover": async ({ workspaceId, selector }) => {
+				try { return await browsers.hover(workspaceId, selector); }
+				catch (err: any) { return { ok: false, error: String(err?.message ?? err) }; }
+			},
+			"browser.scroll": async ({ workspaceId, x, y, selector }) => {
+				try { return await browsers.scroll(workspaceId, x, y, selector); }
+				catch (err: any) { return { ok: false, error: String(err?.message ?? err) }; }
+			},
+			"browser.snapshot": async ({ workspaceId }) => {
+				try { return await browsers.snapshot(workspaceId); }
+				catch (err: any) { return { ok: false, error: String(err?.message ?? err) }; }
+			},
+			"browser.console": ({ workspaceId, limit }) => ({ ok: true, messages: browsers.consoleMessages(workspaceId, limit) }),
+			"browser.record": async ({ workspaceId, ms, intervalMs }) => {
+				try { return await browsers.record(workspaceId, ms, intervalMs); }
+				catch (err: any) { return { ok: false, error: String(err?.message ?? err) }; }
+			},
+
 			"browser.capture": async ({ workspaceId, kind }) => {
 				try {
 					return await browsers.capture(workspaceId, kind);
