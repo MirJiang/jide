@@ -10,11 +10,12 @@
 	"scripts": {
 		"test": "bun test packages/contracts packages/jide-ui apps/desktop",
 		"typecheck": "tsc -p packages/contracts && tsc -p apps/desktop",
-		"desktop:prepare": "cd apps/desktop && hutch electrobun prepare",
+		"desktop:prepare": "cd apps/desktop && DASH_RELEASE_OFFLINE=1 hutch electrobun prepare",
 		"desktop:view": "cd apps/desktop && bunx vite build",
-		"desktop:dev": "cd apps/desktop && hutch electrobun dev",
-		"desktop:build": "cd apps/desktop && bunx vite build && hutch electrobun build",
-		"tokens:generate": "bun packages/jide-ui/scripts/generate-tokens.mjs"
+		"desktop:dev": "cd apps/desktop && DASH_RELEASE_OFFLINE=1 hutch electrobun dev",
+		"desktop:build": "cd apps/desktop && bunx vite build && DASH_RELEASE_OFFLINE=1 hutch electrobun build",
+		"tokens:generate": "bun packages/jide-ui/scripts/generate-tokens.mjs",
+		"desktop": "bun run desktop:view && bun run desktop:dev"
 	},
 	"devDependencies": {
 		"typescript": "~5.9.3"
