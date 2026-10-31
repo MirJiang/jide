@@ -103,7 +103,7 @@ function GitPanel() {
 					key={c.path}
 					className="flex w-full items-center gap-2 px-3 py-[3px] text-left text-xs hover:bg-[var(--bg2)]"
 					style={{ color: "var(--fg-dim)" }}
-					onClick={() => void s.openFile(c.path)}
+					onClick={() => void s.openDiff(c.path)}
 				>
 					<span className="flex-1 truncate font-mono">{c.path}</span>
 					<span className="font-mono text-[10px]" style={{ color: c.kind === "A" ? "var(--green)" : c.kind === "D" ? "var(--red)" : "var(--yellow)" }}>
@@ -199,13 +199,61 @@ export function SidebarPanel() {
 			<div className="flex-1 overflow-y-auto">
 				{sidebar === "files" && <FileTree />}
 				{sidebar === "git" && <GitPanel />}
-				{sidebar === "search" && (
-					<div className="px-3 py-3 text-[11px]" style={{ color: "var(--fg-faint)" }}>
-						搜索在 M2 后续版本实装(编辑器内 Ctrl+F 可用)。
-					</div>
-				)}
+				{sidebar === "search" && <SearchPanel />}
 				{sidebar === "memory" && <MemoryPanel />}
 			</div>
 		</aside>
+	);
+}
+
+
+function SearchPanel() {
+	const s = useIDE();
+	const [q, setQ] = useState("");
+	const [results, setResults] = useState<Array<{ path: string; line: number; text: string }>>([]);
+	const [busy, setBusy] = useState(false);
+
+	const run = async () => {
+		if (!s.client || !s.activeWorkspaceId || !q.trim()) return;
+		setBusy(true);
+		const r = await s.client.request("fs.search", { workspaceId: s.activeWorkspaceId, query: q.trim() });
+		setBusy(false);
+		if (r.ok) setResults(r.results);
+	};
+
+	return (
+		<div className="pb-2">
+			<div className="mx-2.5 my-2 flex items-center gap-2 rounded-md border px-2 py-1.5" style={{ background: "var(--bg0)", borderColor: "var(--line2)" }}>
+				<span style={{ color: "var(--fg-faint)" }}>⌕</span>
+				<input
+					value={q}
+					onChange={(e) => setQ(e.target.value)}
+				 onKeyDown={async (e) => {
+					if (e.key === "Enter") await run();
+				 }}
+					placeholder="全工作区搜索…"
+					className="w-full bg-transparent font-mono text-xs outline-none"
+					style={{ color: "var(--fg)" }}
+				/>
+				{busy && <span className="text-[10px]" style={{ color: "var(--fg-faint)" }}>…</span>}
+			</div>
+			{results.map((r, i) => (
+				<button
+					key={i}
+					className="flex w-full flex-col items-start px-3 py-1 text-left hover:bg-[var(--bg2)]"
+					onClick={() => void s.openFile(r.path)}
+				>
+					<span className="w-full truncate font-mono text-[11px]" style={{ color: "var(--yellow)" }}>
+						{r.text.slice(0, Math.max(0, r.text.toLowerCase().indexOf(q.toLowerCase())))}
+						<b style={{ color: "var(--yellow)" }}>{q}</b>
+						{r.text.slice(r.text.toLowerCase().indexOf(q.toLowerCase()) + q.length)}
+					</span>
+					<span className="font-mono text-[10px]" style={{ color: "var(--fg-faint)" }}>
+						{r.path}:{r.line}
+					</span>
+				</button>
+			))}
+			{!results.length && <div className="px-3 py-2 text-[11px]" style={{ color: "var(--fg-faint)" }}>Enter 搜索;点击结果打开文件。</div>}
+		</div>
 	);
 }

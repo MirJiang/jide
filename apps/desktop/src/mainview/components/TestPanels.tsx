@@ -16,6 +16,7 @@ export function TestPanel() {
 	const [results, setResults] = useState<TestResultView[]>([]);
 	const [meta, setMeta] = useState<{ selected: number; total: number; ms: number } | null>(null);
 	const [running, setRunning] = useState(false);
+	const [autoUpgraded, setAutoUpgraded] = useState(false);
 	const [scope, setScope] = useState<"diff" | "all">("diff");
 
 	const run = async () => {
@@ -27,6 +28,19 @@ export function TestPanel() {
 		if (r.ok) {
 			setResults(r.results as TestResultView[]);
 			setMeta({ selected: r.selected, total: r.total, ms: r.durationMs });
+			// §4D:子集失败 → 自动升级全量回归
+			const failed = r.results.some((x) => x.status === "fail");
+			if (failed && scope === "diff") {
+				setScope("all");
+				const full = await s.client!.request("test.run", { workspaceId: s.activeWorkspaceId!, scope: "all" });
+				if (full.ok) {
+					setResults(full.results as TestResultView[]);
+					setMeta({ selected: full.selected, total: full.total, ms: full.durationMs });
+					setAutoUpgraded(true);
+				}
+			} else {
+				setAutoUpgraded(false);
+			}
 		}
 	};
 

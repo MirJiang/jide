@@ -126,17 +126,33 @@ export function TitleBar() {
 					<span className="text-[9.5px]" style={{ color: "var(--fg-faint)" }}>变更</span>
 					<span className="text-xs font-medium">{s.git.changes.length || "—"}</span>
 				</div>
-				{/* 独立操作按钮(§6):同步 = fetch + 状态刷新;拉取请求留位 */}
+				{/* 独立操作按钮(§6):同步(fetch --all)与拉取请求(远端 compare) */}
 				<button
-					className="flex items-center gap-1 px-3 text-xs"
+					className="jide-no-drag flex items-center gap-1 px-3 text-xs"
 					style={{ color: "var(--orange)", borderRight: "1px solid var(--line)" }}
-					title="git fetch --all + 刷新状态(评审通过后自动并入主线)"
-					onClick={() => {
-						void s.client?.request("git.status", { workspaceId: s.activeWorkspaceId ?? "" });
+					title="git fetch --all + 状态刷新"
+					onClick={async () => {
+						if (!s.client || !s.activeWorkspaceId) return;
+						const r = await s.client.request("git.sync", { workspaceId: s.activeWorkspaceId });
+						useIDE.setState((st) => ({
+							logs: [...st.logs, r.ok ? `已同步(fetch=${r.fetched},↑${r.ahead} ↓${r.behind})` : `同步失败:${r.error}`],
+						}));
 						void s.refreshGit();
 					}}
 				>
 					⟳ 同步
+				</button>
+				<button
+					className="jide-no-drag flex items-center gap-1 px-3 text-xs"
+					style={{ color: "var(--fg-dim)", borderRight: "1px solid var(--line)" }}
+					title="在远端创建拉取请求(compare 页)"
+					onClick={async () => {
+						if (!s.client || !s.activeWorkspaceId) return;
+						const r = await s.client.request("git.openPullRequest", { workspaceId: s.activeWorkspaceId });
+						if (!r.ok) useIDE.setState((st) => ({ logs: [...st.logs, `拉取请求:${r.error}`] }));
+					}}
+				>
+					⇪ 拉取请求
 				</button>
 			</div>
 

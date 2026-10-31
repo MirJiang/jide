@@ -17,7 +17,7 @@ export interface ChatMessage {
 }
 
 export interface EditorTab {
-	kind: "chat" | "file";
+	kind: "chat" | "file" | "diff";
 	/** file: 工作区相对路径 */
 	path?: string;
 	title: string;
@@ -76,6 +76,8 @@ interface IDEStore {
 	};
 
 	terminals: Array<{ id: string; workspaceId: string }>;
+	/** 终端输出环形缓冲(每终端尾 50 行,供「问 agent」取上下文) */
+	terminalBuffers: Record<string, string[]>;
 	activeTerminalId: string | null;
 
 	plan: PlanView | null;
@@ -117,6 +119,8 @@ interface IDEStore {
 	setBottomTab(t: IDEStore["bottomTab"]): void;
 
 	openFile(path: string): Promise<void>;
+	openDiff(path: string): Promise<void>;
+	diffTabKey(path: string): string;
 	setActiveTab(key: string): void;
 	closeTab(key: string): void;
 	saveActiveTab(): Promise<void>;
@@ -139,7 +143,7 @@ interface IDEStore {
 }
 
 let nextMsgId = 1;
-const tabKey = (t: { kind: string; path?: string }) => (t.kind === "chat" ? "chat" : t.path!);
+const tabKey = (t: { kind: string; path?: string }) => (t.kind === "chat" ? "chat" : t.kind === "diff" ? "diff:" + t.path : t.path!);
 
 export const useIDE = create<IDEStore>((set, get) => ({
 	client: null,
@@ -168,6 +172,7 @@ export const useIDE = create<IDEStore>((set, get) => ({
 
 	terminals: [],
 	activeTerminalId: null,
+	terminalBuffers: {},
 
 	plan: null,
 
@@ -458,6 +463,12 @@ export const useIDE = create<IDEStore>((set, get) => ({
 		if (st.ok) {
 			set((s) => ({
 				git: { ...s.git, branch: st.branch, changes: st.changes, ahead: st.ahead, behind: st.behind },
+				// 页签绿点(§6):后台变更的文件页签打点,非活动页签亮绿
+				tabs: s.tabs.map((t) => {
+					if (t.kind !== "file" || !t.path) return t;
+					const changed = st.changes.some((c) => c.path === t.path);
+					return changed && s.activeTab !== t.path ? { ...t, spotted: true } : t;
+				}),
 			}));
 		}
 		const log = await client.request("git.log", { workspaceId: activeWorkspaceId, limit: 30 });
@@ -576,8 +587,14 @@ export const useIDE = create<IDEStore>((set, get) => ({
 				}));
 				break;
 			case "terminal.output":
+				set((st) => {
+					const buf = [...(st.terminalBuffers[event.terminalId] ?? []), event.data];
+					if (buf.length > 50) buf.splice(0, buf.length - 50);
+					return { terminalBuffers: { ...st.terminalBuffers, [event.terminalId]: buf } };
+				});
+				window.dispatchEvent(new CustomEvent("jide-event", { detail: event }));
+				break;
 			case "terminal.exit":
-				// 由 Terminal 组件通过订阅副作用消费(见 Terminal.tsx 的事件总线)
 				window.dispatchEvent(new CustomEvent("jide-event", { detail: event }));
 				break;
 			case "workspace.changed":

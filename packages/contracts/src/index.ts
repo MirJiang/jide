@@ -410,6 +410,33 @@ export interface HostRequestShapes {
 
 	/* ---------------- 记忆域 M4(§5) ---------------- */
 
+	/** diff 双全文(§6):HEAD 全文 vs 工作区全文 */
+	"git.fileDiff": {
+		params: { workspaceId: string; path: string };
+		response:
+			| { ok: true; path: string; headContent: string; workContent: string; headExists: boolean }
+			| { ok: false; error: string };
+	};
+	/** 同步(§6 独立操作):git fetch --all + 状态刷新 */
+	"git.sync": {
+		params: { workspaceId: string };
+		response:
+			| { ok: true; fetched: boolean; ahead: number; behind: number }
+			| { ok: false; error: string };
+	};
+	/** 拉取请求:打开远端 compare 页(系统浏览器) */
+	"git.openPullRequest": {
+		params: { workspaceId: string };
+		response: { ok: true; url: string } | { ok: false; error: string };
+	};
+	/** 搜索(§6 左侧搜索面板) */
+	"fs.search": {
+		params: { workspaceId: string; query: string; maxResults?: number };
+		response:
+			| { ok: true; results: Array<{ path: string; line: number; text: string }> }
+			| { ok: false; error: string };
+	};
+
 	/** 无边框窗口控制(自定义标题栏) */
 	"window.minimize": {
 		params: {};

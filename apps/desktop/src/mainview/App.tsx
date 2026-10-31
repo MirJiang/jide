@@ -10,6 +10,7 @@ import { TitleBar } from "./components/TitleBar";
 import { ActivityBar, SidebarPanel } from "./components/Sidebar";
 import { ChatPanel } from "./components/ChatPanel";
 import { CodeEditor } from "./components/CodeEditor";
+import { DiffView } from "./components/DiffView";
 import { TerminalView } from "./components/TerminalView";
 import { WorkflowDock } from "./components/WorkflowDock";
 import { TestPanel, ChecksPanel } from "./components/TestPanels";
@@ -110,6 +111,11 @@ export default function App() {
 						<div className="absolute inset-0" style={{ display: s.activeTab === "chat" ? "block" : "none" }}>
 							<ChatPanel />
 						</div>
+						{s.tabs.filter((t) => t.kind === "diff").map((t) => (
+							<div key={tabKey(t)} className="absolute inset-0" style={{ display: s.activeTab === tabKey(t) ? "block" : "none" }}>
+								<DiffView path={t.path!} />
+							</div>
+						))}
 						{activeFile && (
 							<div className="absolute inset-0" style={{ display: s.activeTab === activeFile.path ? "block" : "none" }}>
 								<CodeEditor key={activeFile.path} path={activeFile.path!} content={activeFile.content ?? ""} />

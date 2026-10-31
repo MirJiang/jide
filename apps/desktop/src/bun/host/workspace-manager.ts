@@ -270,6 +270,49 @@ export class WorkspaceManager {
 		return null;
 	}
 
+	/** diff 双全文(§6):HEAD 版本 vs 工作区版本 */
+	async fileDiff(workspaceId: string, relPath: string): Promise<
+		{ ok: true; headContent: string; workContent: string; headExists: boolean } | { ok: false; error: string }
+	> {
+		const { cwd } = this.locate(workspaceId);
+		if (!cwd) return { ok: false, error: "工作区不存在" };
+		const show = await runGit(cwd, ["show", "HEAD:" + relPath.replace(/\\/g, "/")]);
+		const headExists = show.code === 0;
+		let workContent = "";
+		try {
+			workContent = readFileSync(join(cwd, relPath), "utf8");
+		} catch {
+			workContent = ""; // 新文件/已删除
+		}
+		return { ok: true, headContent: headExists ? show.out : "", workContent, headExists };
+	}
+
+	/** 同步:fetch --all(远端不可达时静默返回 fetched:false) */
+	async sync(workspaceId: string) {
+		const { cwd } = this.locate(workspaceId);
+		if (!cwd) return { ok: false as const, error: "工作区不存在" };
+		const fetchR = await runGit(cwd, ["fetch", "--all"]);
+		const st = await this.gitStatus(workspaceId);
+		return st.ok
+			? { ok: true as const, fetched: fetchR.code === 0, ahead: st.ahead, behind: st.behind }
+			: { ok: false as const, error: st.error };
+	}
+
+	/** 远端 compare URL(用于拉取请求入口) */
+	async remoteCompareUrl(workspaceId: string): Promise<string | null> {
+		const { cwd } = this.locate(workspaceId);
+		if (!cwd) return null;
+		const r = await runGit(cwd, ["remote", "get-url", "origin"]);
+		if (r.code !== 0) return null;
+		// git@github.com:owner/repo.git 或 https://github.com/owner/repo.git → owner/repo
+		const m = r.out.match(/github\.com[/:](.+?)(?:\.git)?$/);
+		if (!m) return null;
+		const branchR = await runGit(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]);
+		const branch = branchR.code === 0 ? branchR.out : "";
+		if (!branch || branch === "main") return null;
+		return `https://github.com/${m[1]}/compare/main...${branch}?expand=1`;
+	}
+
 	locate(workspaceId: string): { cwd: string | null; projectId: string | null } {
 		const projectId = workspaceId.split(":")[0];
 		const rec = this.store.projects[projectId];

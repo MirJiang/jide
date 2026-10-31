@@ -105,9 +105,20 @@ export function TerminalView() {
 				>
 					+
 				</button>
-				<span className="ml-auto text-[10.5px]" style={{ color: "var(--fg-faint)" }}>
-					{activeIdRef.current ? "" : "点 + 创建终端"}
-				</span>
+				<button
+					className="ml-auto rounded border px-1.5 py-0.5 text-[10.5px]"
+					style={{ borderColor: "#4a6db3", background: "var(--acc-dim)", color: "#dbe7ff" }}
+					title="把终端最近输出送去对话"
+					onClick={() => {
+						const id = s.activeTerminalId;
+						if (!id) return;
+						const buf = s.terminalBuffers[id] ?? [];
+						const text = buf.join("").replace(/[[0-9;]*[A-Za-z]/g, "").slice(-400);
+						void s.askAgent("terminal", text || "(终端无输出)", "终端这段输出是什么情况?");
+					}}
+				>
+					✦ 问 agent
+				</button>
 			</div>
 			<div ref={hostRef} className="min-h-0 flex-1 px-1 py-0.5" />
 		</div>

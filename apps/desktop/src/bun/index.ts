@@ -29,7 +29,7 @@ import { MemoryManager } from "./host/memory-manager";
 import { buildJideTools } from "./host/agent-tools";
 import { mapFilesToTests as mapTests } from "./host/test-runner";
 import { HttpProbe, TestRunner, mapFilesToTests } from "./host/test-runner";
-import { readdirSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join as pathJoin } from "node:path";
 
 const DEV_SERVER_PORT = 5173;
@@ -480,7 +480,15 @@ const rpc = BrowserView.defineRPC<JideRPC>({
 				const r = checks.create(workspaceId, title, kind, assertion, appliesTo);
 				return r.ok ? { ok: true, id: r.id } : { ok: false, error: r.error };
 			},
-			"checks.run": ({ workspaceId, ids }) => checks.run(workspaceId, ids),
+			"checks.run": async ({ workspaceId, ids }) => {
+				const r = await checks.run(workspaceId, ids);
+				if (r.ok && r.results.length) {
+					// W6:检查项结果入评审队列(人工门禁)
+					const pass = r.results.filter((x: any) => x.passed).length;
+					review.enqueueChecks(workspaceId, pass, r.results.length);
+				}
+				return r;
+			},
 			"checks.delete": ({ workspaceId, id }) => checks.delete(workspaceId, id),
 
 			"browser.navigate": async ({ workspaceId, url }) => {
@@ -517,6 +525,54 @@ const rpc = BrowserView.defineRPC<JideRPC>({
 				const cPass = c.results.filter((x: any) => x.passed).length;
 				const summary = `测试 ${pass}/${pass + fail}(选测 ${t.selected}/${t.total}) · 检查项 ${cPass}/${c.results.length}`;
 				return { ok: true, summary };
+			},
+
+			"git.fileDiff": async ({ workspaceId, path }) => {
+				const r = await workspaces.fileDiff(workspaceId, path);
+				return r.ok
+					? { ok: true, path, headContent: r.headContent, workContent: r.workContent, headExists: r.headExists }
+					: { ok: false, error: r.error };
+			},
+			"git.sync": async ({ workspaceId }) => {
+				const r = await workspaces.sync(workspaceId);
+				return r.ok ? { ok: true, fetched: r.fetched, ahead: r.ahead, behind: r.behind } : { ok: false, error: r.error };
+			},
+			"git.openPullRequest": async ({ workspaceId }) => {
+				const url = await workspaces.remoteCompareUrl(workspaceId);
+				if (!url) return { ok: false, error: "无远端或当前在 main" };
+				Bun.spawn(["cmd", "/c", "start", "", url], { stdout: "ignore", stderr: "ignore" });
+				return { ok: true, url };
+			},
+			"fs.search": ({ workspaceId, query, maxResults }) => {
+				const { cwd } = workspaces.locate(workspaceId);
+				if (!cwd) return { ok: false, error: "工作区不存在" };
+				const results: Array<{ path: string; line: number; text: string }> = [];
+				const q = query.toLowerCase();
+				const walk = (dir: string, rel: string, depth: number) => {
+					if (depth > 6 || results.length >= (maxResults ?? 100)) return;
+					let entries;
+					try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+					for (const e of entries) {
+						if (e.name === "node_modules" || e.name === ".git" || e.name === "build" || e.name === "dist" || e.name === ".hutch") continue;
+						const relPath = rel ? rel + "/" + e.name : e.name;
+						if (e.isDirectory()) { walk(pathJoin(dir, e.name), relPath, depth + 1); continue; }
+						if (!/.(ts|tsx|js|jsx|json|md|css|html|py|go|rs)$/.test(e.name)) continue;
+						try {
+							const content = readFileSync(pathJoin(dir, e.name), "utf8");
+							const lines = content.split(/?
+/);
+							for (let i = 0; i < lines.length && results.length < (maxResults ?? 100); i++) {
+								const low = lines[i].toLowerCase();
+								const at = low.indexOf(q);
+								if (at >= 0) {
+									results.push({ path: relPath, line: i + 1, text: lines[i].trim().slice(0, 160) });
+								}
+							}
+						} catch { /* binary/locked */ }
+					}
+				};
+				walk(cwd, "", 0);
+				return { ok: true, results };
 			},
 
 			"review.list": ({ projectId }) => ({ ok: true, items: review.list(projectId) }),
@@ -586,10 +642,15 @@ const rpc = BrowserView.defineRPC<JideRPC>({
 				return { ok: true, suggestionId: s.id };
 			},
 			"memory.decide": ({ suggestionId, action, editedLines }) => {
-				for (const m of memories.values()) {
+				for (const [wid, m] of memories.entries()) {
 					if (action === "adopt") {
+						// 建议卡片本身就是人工动作;采纳后入评审队列归档(W6 记忆建议条目)
+						const sg = (m as any).suggestions?.get(suggestionId);
 						const r = m.adopt(suggestionId, editedLines);
-						if (r.ok) return r;
+						if (r.ok) {
+							review.enqueueMemory(wid, "记忆 · " + (sg?.file ?? ""), (sg?.lines ?? []).slice(0, 2).join(" / "));
+							return r;
+						}
 					} else {
 						const r = m.ignore(suggestionId);
 						if (r.ok) return r;
