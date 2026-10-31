@@ -226,6 +226,10 @@ export class DevServerManager {
 		if (!entry) return { ok: false as const, error: "无运行中的 dev server" };
 		entry.state = "stopped";
 		entry.proc?.kill();
+		// Windows 进程树回收(dev server 派生 vite/esbuild 等)
+		if (process.platform === "win32" && entry.proc?.pid) {
+			Bun.spawn(["taskkill", "/F", "/T", "/PID", String(entry.proc.pid)], { stdout: "ignore", stderr: "ignore" });
+		}
 		this.servers.delete(workspaceId);
 		this.pushStatus({ ...entry, url: null });
 		return { ok: true as const };

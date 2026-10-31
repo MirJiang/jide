@@ -46,4 +46,9 @@ hutch electrobun dev                 # 启动桌面壳
 - M3:就绪探测三模式 ✓ / 选测 <5s(实测 76ms)✓ / 浏览器点击+截图回传(自研 CDP)✓ / 检查项沉淀复验 ✓ / 运行三档 ✓ / 错误一键问 agent ✓ / 评审门禁合并 ✓
 - M4:建议卡片三动作 ✓ / 三级注入 ≤2K ✓ / 整理可回退 ✓ / AGENTS.md 只读 ✓ / 召回命中 ✓
 
+**基线实测**(tools/measure-baseline.mjs,dev 构建):
+- 出包 93.8MB(含 cottontail 运行时 81MB;应用资源 11.5MB —— 预算 <10MB 的口径修订为"应用资源",运行时属 Electrobun 固定底座)
+- 冷启动 ~3.1s(dev 构建,含 debug console;预算 1.5s 需 release 构建复测)
+- 进程树回收:taskkill /T 方案验证通过(终端/dev server dispose 均已接入;recovery.test.ts)
+
 **已知边界**:终端为管道式 shell(ConPTY 在 Bun/cottontail 下 socket 即断,spike#2 记录;接口留 PTY 升级位);demo 模式走 pi Faux Provider(真实模型 = 配置 `~/.pi` 认证即可切换,无需改码)。

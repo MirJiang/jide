@@ -109,7 +109,14 @@ export class TerminalManager {
 	dispose(id: string) {
 		const entry = this.terminals.get(id);
 		if (!entry) return { ok: false as const, error: "终端不存在" };
+		// Windows 进程树回收:shell 可能派生子进程(cmd → bun 等),taskkill /T 兜底
 		entry.proc.kill();
+		if (process.platform === "win32" && entry.proc.pid) {
+			Bun.spawn(["taskkill", "/F", "/T", "/PID", String(entry.proc.pid)], {
+				stdout: "ignore",
+				stderr: "ignore",
+			});
+		}
 		this.terminals.delete(id);
 		return { ok: true as const };
 	}
