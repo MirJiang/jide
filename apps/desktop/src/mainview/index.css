@@ -1,3 +1,11 @@
+/* 离线打包字体(tech-stack §4:Geist Variable + JetBrains Mono Variable) */
+@import "@fontsource-variable/geist/wght.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/700.css";
+
+/* @jide/ui 设计令牌(生成物:改 tokens.src.json 后重跑 generate) */
+@import "@jide/ui/tokens.css";
+
 @import "tailwindcss";
 
 /* 设计令牌:对齐冻结原型(暗色 IDE) */
@@ -80,3 +88,62 @@ body {
 	background: #e05b5b;
 	color: #fff;
 }
+
+
+/* 令牌别名:现有组件用短名,统一指向 --jide-* 生成变量 */
+:root {
+	--bg0: var(--jide-color-bg0);
+	--bg1: var(--jide-color-bg1);
+	--bg2: var(--jide-color-bg2);
+	--bg3: var(--jide-color-bg3);
+	--line: var(--jide-color-line);
+	--line2: var(--jide-color-line2);
+	--fg: var(--jide-color-fg);
+	--fg-dim: var(--jide-color-fg-dim);
+	--fg-faint: var(--jide-color-fg-faint);
+	--acc: var(--jide-color-acc);
+	--acc-dim: var(--jide-color-acc-dim);
+	--green: var(--jide-color-green);
+	--red: var(--jide-color-red);
+	--yellow: var(--jide-color-yellow);
+	--purple: var(--jide-color-purple);
+	--orange: var(--jide-color-orange);
+}
+
+body {
+	font-family: var(--jide-typography-font-ui);
+}
+
+/* ============ agent 消息 markdown 渲染 ============ */
+.md-body {
+	line-height: 1.7;
+	font-size: 13px;
+	word-break: break-word;
+}
+.md-body p { margin: 0.35em 0; }
+.md-body ul, .md-body ol { margin: 0.35em 0 0.35em 1.4em; }
+.md-body ul { list-style: disc; }
+.md-body ol { list-style: decimal; }
+.md-body code {
+	font-family: var(--jide-typography-font-mono);
+	font-size: 12px;
+	background: var(--bg0);
+	border: 1px solid var(--line);
+	border-radius: 4px;
+	padding: 0 4px;
+}
+.md-body pre {
+	background: var(--bg0);
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	padding: 10px 12px;
+	overflow-x: auto;
+	margin: 0.5em 0;
+}
+.md-body pre code { border: none; padding: 0; background: none; font-size: 11.5px; line-height: 1.6; }
+.md-body table { border-collapse: collapse; margin: 0.5em 0; }
+.md-body th, .md-body td { border: 1px solid var(--line); padding: 4px 10px; font-size: 12px; }
+.md-body blockquote { border-left: 3px solid var(--acc-dim); margin: 0.5em 0; padding-left: 10px; color: var(--fg-dim); }
+.md-body a { color: var(--acc); }
+.md-body h1, .md-body h2, .md-body h3 { margin: 0.6em 0 0.3em; font-weight: 600; }
+.md-body h1 { font-size: 15px; } .md-body h2 { font-size: 14px; } .md-body h3 { font-size: 13px; }

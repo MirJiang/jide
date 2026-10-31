@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { useIDE } from "../store";
 import { MemorySuggestionCard } from "./MemoryPanel";
 import { PixelJ } from "./PixelJ";
+import { Markdown } from "./Markdown";
+import { Virtuoso } from "react-virtuoso";
 
 const STATUS_LABEL: Record<string, string> = {
 	idle: "空闲",
@@ -107,7 +109,7 @@ export function ChatPanel() {
 									}}
 								>
 									{m.tool && <span style={{ color: m.toolError ? "var(--red)" : "var(--acc)" }}>⚙ </span>}
-									{m.text}
+									{m.tool ? m.text : <Markdown text={m.text} />}
 								</div>
 							</div>
 						),

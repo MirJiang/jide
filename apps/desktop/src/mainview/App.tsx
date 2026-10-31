@@ -3,7 +3,7 @@
  * 标题栏(Git 状态条)| 活动栏 | 侧栏 | 内容区页签(Agent 对话默认 + 文件)+ 底部面板 | 计划停靠 | 状态栏
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useIDE, tabKey } from "./store";
 import { connect } from "./rpc";
 import { TitleBar } from "./components/TitleBar";
@@ -20,6 +20,8 @@ import { TrustGate } from "./components/TrustGate";
 export default function App() {
 	const s = useIDE();
 	const bootedRef = useRef(false);
+	const [bottomHeight, setBottomHeight] = useState(225);
+	const dragRef = useRef<{ startY: number; startH: number } | null>(null);
 
 	useEffect(() => {
 		if (bootedRef.current) return;

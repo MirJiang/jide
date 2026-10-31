@@ -1,0 +1,41 @@
+{
+	"$schema": "./tokens.schema.json",
+	"color": {
+		"bg0": "#0e1015",
+		"bg1": "#14171f",
+		"bg2": "#1a1e29",
+		"bg3": "#222735",
+		"line": "#262b3a",
+		"line2": "#303648",
+		"fg": "#d7dbe6",
+		"fg-dim": "#8b93a8",
+		"fg-faint": "#5c6478",
+		"acc": "#6ea8fe",
+		"acc-dim": "#3d5a8a",
+		"green": "#4ade80",
+		"red": "#f87171",
+		"yellow": "#facc15",
+		"purple": "#c4b5fd",
+		"orange": "#fb923c"
+	},
+	"spacing": {
+		"xs": "4px",
+		"sm": "8px",
+		"md": "12px",
+		"lg": "16px",
+		"xl": "24px"
+	},
+	"typography": {
+		"font-ui": "\"Geist\", \"Segoe UI\", \"Microsoft YaHei\", system-ui, sans-serif",
+		"font-mono": "\"JetBrains Mono\", \"Cascadia Code\", Consolas, monospace",
+		"size-xs": "10.5px",
+		"size-sm": "11.5px",
+		"size-md": "13px",
+		"size-lg": "15px"
+	},
+	"radius": {
+		"sm": "4px",
+		"md": "7px",
+		"lg": "10px"
+	}
+}
