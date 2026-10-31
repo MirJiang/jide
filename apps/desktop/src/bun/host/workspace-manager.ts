@@ -260,7 +260,8 @@ export class WorkspaceManager {
 	/** 路径 → workspaceId(遍历已登记项目的工作区;找不到返回 null) */
 	async resolveWorkspaceId(path: string): Promise<string | null> {
 		if (!path) return null;
-		const norm = (p: string) => p.replace(/\/g, "/").toLowerCase().replace(//$/, "");
+		const norm = (p: string) =>
+			p.replace(/[\\/]+/g, "/").toLowerCase().replace(/\/$/, "");
 		for (const rec of Object.values(this.store.projects)) {
 			for (const w of await this.listWorkspaces(rec.id)) {
 				if (norm(w.path) === norm(path)) return w.id;
