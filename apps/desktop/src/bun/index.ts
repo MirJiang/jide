@@ -609,11 +609,10 @@ const rpc = BrowserView.defineRPC<JideRPC>({
 						if (e.name === "node_modules" || e.name === ".git" || e.name === "build" || e.name === "dist" || e.name === ".hutch") continue;
 						const relPath = rel ? rel + "/" + e.name : e.name;
 						if (e.isDirectory()) { walk(pathJoin(dir, e.name), relPath, depth + 1); continue; }
-						if (!/.(ts|tsx|js|jsx|json|md|css|html|py|go|rs)$/.test(e.name)) continue;
+						if (!/\.(ts|tsx|js|jsx|json|md|css|html|py|go|rs)$/.test(e.name)) continue;
 						try {
 							const content = readFileSync(pathJoin(dir, e.name), "utf8");
-							const lines = content.split(/?
-/);
+							const lines = content.split(/\r?\n/);
 							for (let i = 0; i < lines.length && results.length < (maxResults ?? 100); i++) {
 								const low = lines[i].toLowerCase();
 								const at = low.indexOf(q);
