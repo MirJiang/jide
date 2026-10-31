@@ -26,6 +26,8 @@ import { BrowserAutomation } from "./host/browser-automation";
 import { ChecksManager } from "./host/checks-manager";
 import { ReviewQueue } from "./host/review-queue";
 import { MemoryManager } from "./host/memory-manager";
+import { buildJideTools } from "./host/agent-tools";
+import { mapFilesToTests as mapTests } from "./host/test-runner";
 import { HttpProbe, TestRunner, mapFilesToTests } from "./host/test-runner";
 import { readdirSync } from "node:fs";
 import { join as pathJoin } from "node:path";
@@ -87,6 +89,27 @@ const checks = new ChecksManager(browsers);
 const runner = new TestRunner();
 const review = new ReviewQueue(workspaces, RUNTIME_ROOT);
 const memories = new Map<string, MemoryManager>();
+
+const toolContextFor = (workspaceId: string, cwd: string) => ({
+	workspaceId,
+	cwd,
+	devserver,
+	probe: HttpProbe.run,
+	testRunner: runner,
+	scanTests: (c: string) => scanTestFiles(c),
+	changedFiles: async (wid: string) => {
+		const st = await workspaces.gitStatus(wid);
+		return st.ok ? st.changes.map((c) => c.path) : [];
+	},
+	browsers,
+	checks,
+	plans: {
+		create: (wid: string, goal: string, steps: string[]) => plans.create(wid, goal, steps).id,
+		stepDone: (planId: string, i: number) => plans.stepDone(planId, i),
+		current: (wid: string) => plans.getByWorkspace(wid)?.id,
+	},
+	memory: (memoryFor(workspaceId) ?? new MemoryManager(cwd)),
+});
 
 const memoryFor = (workspaceId: string): MemoryManager | null => {
 	const { cwd } = workspaces.locate(workspaceId);
@@ -211,11 +234,15 @@ const rpc = BrowserView.defineRPC<JideRPC>({
 						memoryContext = inj.text || undefined;
 						agentsMd = memByPath.readAgents();
 					}
+					// 解析 workspaceId → 注入 JIDE 工具(测试域/计划/记忆,agent 可自主调用)
+					const toolWsId = await workspaces.resolveWorkspaceId(workspacePath);
+					const tools = toolWsId ? buildJideTools(toolContextFor(toolWsId, workspacePath)) : undefined;
 					const entry = await host.createSession({
 						workspacePath,
 						demoMode: demoMode ?? DEMO_DEFAULT,
 						memoryContext,
 						agentsMd,
+						customTools: tools,
 					});
 					return {
 						ok: true,

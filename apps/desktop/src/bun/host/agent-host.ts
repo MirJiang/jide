@@ -46,6 +46,8 @@ export interface CreateSessionOptions {
 	/** 三级注入文本(M4);连同 AGENTS.md(只读)一并作为 context files */
 	memoryContext?: string;
 	agentsMd?: string | null;
+	/** JIDE agent 工具(测试域/计划/记忆;见 agent-tools.ts) */
+	customTools?: unknown[];
 }
 
 export type EmitFn = (event: HostEvent) => void;
@@ -197,6 +199,7 @@ export class AgentHost {
 			cwd,
 			sessionManager: manager,
 			...(resourceLoader ? { resourceLoader } : {}),
+			...(opts.customTools?.length ? { customTools: opts.customTools as any } : {}),
 			...(opts.demoMode ? await createDemoRuntime() : {}),
 		});
 

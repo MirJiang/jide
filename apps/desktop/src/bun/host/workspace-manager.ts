@@ -257,6 +257,18 @@ export class WorkspaceManager {
 		return { ok: true as const, commits };
 	}
 
+	/** 路径 → workspaceId(遍历已登记项目的工作区;找不到返回 null) */
+	async resolveWorkspaceId(path: string): Promise<string | null> {
+		if (!path) return null;
+		const norm = (p: string) => p.replace(/\/g, "/").toLowerCase().replace(//$/, "");
+		for (const rec of Object.values(this.store.projects)) {
+			for (const w of await this.listWorkspaces(rec.id)) {
+				if (norm(w.path) === norm(path)) return w.id;
+			}
+		}
+		return null;
+	}
+
 	locate(workspaceId: string): { cwd: string | null; projectId: string | null } {
 		const projectId = workspaceId.split(":")[0];
 		const rec = this.store.projects[projectId];
