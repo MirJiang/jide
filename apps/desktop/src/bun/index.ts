@@ -27,6 +27,8 @@ import { ChecksManager } from "./host/checks-manager";
 import { ReviewQueue } from "./host/review-queue";
 import { MemoryManager } from "./host/memory-manager";
 import { buildJideTools } from "./host/agent-tools";
+import { CredentialStore } from "./host/credential-store";
+import { createGuardExtension } from "./host/guard-extension";
 import { mapFilesToTests as mapTests } from "./host/test-runner";
 import { HttpProbe, TestRunner, mapFilesToTests } from "./host/test-runner";
 import { readFileSync, readdirSync } from "node:fs";
@@ -89,6 +91,7 @@ const checks = new ChecksManager(browsers);
 const runner = new TestRunner();
 const review = new ReviewQueue(workspaces, RUNTIME_ROOT);
 const memories = new Map<string, MemoryManager>();
+const creds = new CredentialStore();
 
 const toolContextFor = (workspaceId: string, cwd: string) => ({
 	workspaceId,
@@ -237,12 +240,21 @@ const rpc = BrowserView.defineRPC<JideRPC>({
 					// 解析 workspaceId → 注入 JIDE 工具(测试域/计划/记忆,agent 可自主调用)
 					const toolWsId = await workspaces.resolveWorkspaceId(workspacePath);
 					const tools = toolWsId ? buildJideTools(toolContextFor(toolWsId, workspacePath)) : undefined;
+					// §7.5 危险命令门禁(项目豁免:.jide/allow-dangerous.json)
+					let allowList: string[] = [];
+					try {
+						allowList = JSON.parse(readFileSync(join(workspacePath || ".", ".jide", "allow-dangerous.json"), "utf8"));
+					} catch {
+						/* 无豁免文件 */
+					}
+					const guard = createGuardExtension(allowList);
 					const entry = await host.createSession({
 						workspacePath,
 						demoMode: demoMode ?? DEMO_DEFAULT,
 						memoryContext,
 						agentsMd,
 						customTools: tools,
+						extensions: [guard],
 					});
 					return {
 						ok: true,

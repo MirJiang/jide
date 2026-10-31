@@ -48,6 +48,8 @@ export interface CreateSessionOptions {
 	agentsMd?: string | null;
 	/** JIDE agent 工具(测试域/计划/记忆;见 agent-tools.ts) */
 	customTools?: unknown[];
+	/** 内联扩展(危险命令门禁等) */
+	extensions?: unknown[];
 }
 
 export type EmitFn = (event: HostEvent) => void;
@@ -200,6 +202,7 @@ export class AgentHost {
 			sessionManager: manager,
 			...(resourceLoader ? { resourceLoader } : {}),
 			...(opts.customTools?.length ? { customTools: opts.customTools as any } : {}),
+			...(opts.extensions?.length ? { extensions: opts.extensions as any } : {}),
 			...(opts.demoMode ? await createDemoRuntime() : {}),
 		});
 
