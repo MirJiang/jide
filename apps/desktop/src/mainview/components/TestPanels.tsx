@@ -51,7 +51,7 @@ export function TestPanel() {
 		<div className="flex h-full flex-col">
 			<div className="flex items-center gap-3 px-3.5 py-1.5 text-xs" style={{ borderBottom: "1px solid var(--line)", color: "var(--fg-dim)" }}>
 				<span className="flex items-center gap-1.5 rounded px-2 py-0.5" style={{ background: "var(--purple-bg)", color: "var(--purple)" }}>
-					⚡ 智能选测:diff 文件集 → 关联用例
+					智能选测
 				</span>
 				<select
 					value={scope}
@@ -86,7 +86,7 @@ export function TestPanel() {
 							style={{ borderBottom: "1px solid rgba(38,43,58,.5)", color: r.status === "fail" ? "#e8a9a9" : "var(--fg-dim)" }}
 						>
 							<span style={{ color: r.status === "pass" ? "var(--green)" : r.status === "fail" ? "var(--red)" : "var(--fg-faint)" }}>
-								{r.status === "pass" ? "✓" : r.status === "fail" ? "✗" : "–"}
+								{r.status === "pass" ? "通过" : r.status === "fail" ? "失败" : "跳过"}
 							</span>
 							<span className="truncate">{r.name}</span>
 							<span className="ml-auto text-[10.5px]" style={{ color: "var(--fg-faint)" }}>
@@ -101,7 +101,7 @@ export function TestPanel() {
 									style={{ borderColor: "var(--acc-line)", background: "var(--acc-dim)", color: "var(--acc-text)" }}
 									onClick={() => void s.askAgent("test", `${r.file} · ${r.name} 失败:${r.message?.slice(0, 300)}`, "这个失败为什么发生?")}
 								>
-									✦ 问 agent:这次失败为什么?
+									问 agent:这次失败为什么?
 								</button>
 							</div>
 						)}
@@ -109,7 +109,7 @@ export function TestPanel() {
 				))}
 				{!results.length && !running && (
 					<div className="px-3.5 py-2 text-[11.5px]" style={{ color: "var(--fg-faint)" }}>
-						运行智能选测:变更文件自动映射关联用例子集(12/48 级别);子集失败时切「全量」回归。
+						尚无测试结果。
 					</div>
 				)}
 			</div>
@@ -176,15 +176,12 @@ export function ChecksPanel() {
 					return (
 						<div key={c.id} className="flex items-center gap-2.5 px-3.5 py-1.5 text-xs" style={{ borderBottom: "1px solid rgba(38,43,58,.5)" }}>
 							<span
-								className="inline-block h-[15px] w-[15px] flex-none rounded border text-center text-[10px] leading-[14px]"
+								className="inline-block h-[12px] w-[12px] flex-none rounded-[3px] border"
 								style={{
 									borderColor: res ? (res.passed ? "var(--green)" : "var(--red)") : "var(--fg-faint)",
-									background: res?.passed ? "var(--green-bg)" : undefined,
-									color: "var(--green)",
+									background: res ? (res.passed ? "var(--green)" : "var(--red)") : "transparent",
 								}}
-							>
-								{res?.passed ? "✓" : res && !res.passed ? "✗" : ""}
-							</span>
+							/>
 							<span className="truncate" style={{ color: res ? "var(--fg)" : "var(--fg-dim)" }}>{c.title}</span>
 							<span className="font-mono text-[10px]" style={{ color: "var(--fg-faint)" }}>{c.assertion.type}</span>
 							<span

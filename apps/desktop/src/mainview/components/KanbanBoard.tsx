@@ -126,7 +126,7 @@ function TaskCard({ task, workers, onClose }: { task: OrchestrationTask; workers
 			)}
 			{task.status === "awaiting-review" && (
 				<div className="mt-1 text-[10.5px]" style={{ color: "var(--yellow)" }}>
-					{race ? "在竞赛面板选优" : "在评审队列人工收口"} →
+					{race ? "在竞赛面板选优" : "在评审队列人工收口"}
 				</div>
 			)}
 		</div>
@@ -157,9 +157,6 @@ export function KanbanBoard() {
 			<div className="flex flex-none items-center gap-2 px-4 py-2" style={{ borderBottom: "1px solid var(--line)" }}>
 				<Icon name="ri-kanban-view-2" size={14} color="var(--acc)" />
 				<span className="text-xs font-semibold" style={{ letterSpacing: 1 }}>任务看板</span>
-				<span className="text-[10.5px]" style={{ color: "var(--fg-faint)" }}>
-					任务 → Worker → 验证 → 人收(数据源:编排 Worker 池 / 竞赛 / 自动化;daemon 常驻历史保留)
-				</span>
 				<span className="ml-auto text-[10.5px]" style={{ color: "var(--fg-faint)" }}>
 					进行中 {openCount} / 全部 {s.tasks.length}
 				</span>

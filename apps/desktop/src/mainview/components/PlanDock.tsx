@@ -84,22 +84,19 @@ export function PlanDockInner({ onClose }: { onClose?: () => void }) {
 					<div className="mx-2.5 my-2 rounded-lg border p-2.5" style={{ background: "var(--bg2)", borderColor: "var(--line)" }}>
 						<div className="mb-0.5 text-[12.5px] font-medium">{s.plan.goal}</div>
 						<div className="mb-2 text-[11px]" style={{ color: "var(--fg-faint)" }}>
-							{isolated ? "隔离工作区 · 步骤完成自动提交(W5)" : "Default 工作区 · 自动提交已禁用(W2)"}
+							{isolated ? "隔离工作区 · 步骤完成自动提交" : "Default 工作区 · 自动提交已禁用"}
 						</div>
 						{s.plan.steps.map((st, i) => (
 							<div key={i} className="flex items-start gap-2 py-1">
 								<button
-									className="mt-[2px] flex h-[15px] w-[15px] flex-none items-center justify-center rounded-[4px] border text-[10px]"
+									className="mt-[2px] flex h-[15px] w-[15px] flex-none items-center justify-center rounded-[4px] border"
 									style={{
 										borderColor: st.state === "done" ? "var(--green)" : st.state === "doing" ? "var(--acc)" : "var(--fg-faint)",
-										background: st.state === "done" ? "var(--green-bg)" : undefined,
-										color: "var(--green)",
+										background: st.state === "done" ? "var(--green)" : undefined,
 									}}
 									title="标记完成"
 									onClick={() => st.state !== "done" && void s.planStepDone(i)}
-								>
-									{st.state === "done" ? "✓" : st.state === "doing" ? "•" : ""}
-								</button>
+								/>
 								<div className="min-w-0 flex-1">
 									<div
 										className="text-[12px] leading-snug"
@@ -123,7 +120,7 @@ export function PlanDockInner({ onClose }: { onClose?: () => void }) {
 				className="flex items-center gap-1.5 px-3 py-1.5 text-[11px]"
 				style={{ borderTop: "1px solid var(--line)", color: "var(--fg-faint)" }}
 			>
-				⎇ 计划步骤自动提交{isolated ? "已开启(仅隔离工作区)" : "未启用(当前为 Default)"}
+				计划步骤自动提交{isolated ? " · 已开启(仅隔离工作区)" : " · 未启用(当前为 Default)"}
 			</div>
 		</div>
 	);

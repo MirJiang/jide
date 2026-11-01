@@ -181,7 +181,7 @@ function ModelPicker() {
 								{favorites.length > 0 && (
 									<>
 										<div className="px-2.5 pb-1 pt-1.5 text-[10px] font-semibold tracking-wider" style={{ color: "var(--fg-faint)" }}>
-											常用(设置 → 模型)
+											常用
 										</div>
 										{favorites.map((k) => {
 											const m = catalog.find((x) => x.key === k);
@@ -479,23 +479,16 @@ export function ChatPanel() {
 								<div className="text-[15px] font-semibold" style={{ color: "var(--fg)" }}>
 									打开一个项目开始协作
 								</div>
-								<div className="mt-1.5 text-xs leading-relaxed" style={{ color: "var(--fg-faint)" }}>
-									选择一个 git 仓库,agent 帮你改代码、跑测试、自动提交
-								</div>
 							</div>
 							<button className="jide-btn px-5 py-2 text-sm" onClick={() => useIDE.getState().setProjectMenuOpen(true)}>
 								<Icon name="ri-folder-open-line" size={14} />
 								打开项目…
 							</button>
-							<div className="flex items-center gap-1 text-[11px]" style={{ color: "var(--fg-faint)" }}>
-								<Icon name="ri-information-line" size={12} />
-								也可以从标题栏「项目」下拉随时打开(本地 / 远程)
-							</div>
 						</div>
 					)}
 					{s.chat.messages.length === 0 && !s.chat.streaming && s.project && (
 						<div className="mt-10 text-center text-sm" style={{ color: "var(--fg-faint)" }}>
-							发送一句话,走通 UI → 宿主 → pi 全链路
+							发送消息开始对话
 						</div>
 					)}
 					{s.chat.messages.map((m) =>

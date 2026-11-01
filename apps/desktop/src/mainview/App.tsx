@@ -137,9 +137,8 @@ export default function App() {
 						{s.tabs.filter((t) => t.kind === "preview").map((t) => (
 							<div key="preview" className="absolute inset-0 flex flex-col" style={{ display: s.activeTab === "preview" ? "flex" : "none" }}>
 								<div className="flex items-center gap-2 px-3.5 py-1.5" style={{ background: "var(--bg1)", borderBottom: "1px solid var(--line)" }}>
-									<span style={{ color: "var(--green)" }}>⟳</span>
+									<Icon name="ri-global-line" size={12} color="var(--green)" />
 									<span className="font-mono text-[11px]" style={{ color: "var(--fg-dim)" }}>{t.path}</span>
-									<span className="text-[10px]" style={{ color: "var(--fg-faint)" }}>与 agent 共用 dev server(共引擎)</span>
 									<button className="ml-auto rounded border px-2 py-0.5 text-[10.5px]" style={{ borderColor: "var(--line)", color: "var(--fg-dim)" }} onClick={() => void s.client?.request("preview.open", { url: t.path! })}>独立窗口</button>
 								</div>
 								<iframe src={t.path} className="min-h-0 flex-1" style={{ border: "none", background: "#fff" }} />

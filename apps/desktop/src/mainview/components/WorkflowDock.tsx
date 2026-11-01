@@ -90,15 +90,15 @@ export function WorkflowDock() {
 			{/* 最右窄菜单(原型 rail2):点谁展开谁,再点收起 */}
 			<nav className="flex w-[46px] flex-col items-center gap-1 pt-1.5" style={{ background: "var(--bg1)", borderLeft: "1px solid var(--line)" }}>
 				<button
-					title="计划 · 当前 todo"
-					className="relative flex h-[38px] w-[38px] items-center justify-center rounded-lg text-lg"
+					title="计划"
+					className="relative flex h-[38px] w-[38px] items-center justify-center rounded-lg"
 					style={{ color: open.plan ? "var(--acc)" : "var(--fg-faint)", background: open.plan ? "var(--bg2)" : undefined }}
 					onClick={() => toggle("plan")}
 				>
-					☑
+					<Icon name="ri-checkbox-line" size={19} />
 				</button>
 				<button
-					title="任务看板 · 任务→Worker→验证→人收"
+					title="任务看板"
 					className="relative flex h-[38px] w-[38px] items-center justify-center rounded-lg"
 					style={{ color: openTasksCount > 0 ? "var(--acc)" : "var(--fg-faint)" }}
 					onClick={() => useIDE.getState().openTasks()}
@@ -136,11 +136,11 @@ export function WorkflowDock() {
 				</button>
 				<button
 					title="评审队列"
-					className="relative flex h-[38px] w-[38px] items-center justify-center rounded-lg text-lg"
+					className="relative flex h-[38px] w-[38px] items-center justify-center rounded-lg"
 					style={{ color: open.review ? "var(--acc)" : "var(--fg-faint)", background: open.review ? "var(--bg2)" : undefined }}
 					onClick={() => toggle("review")}
 				>
-					✓
+					<Icon name="ri-check-double-line" size={19} />
 					{pending > 0 && (
 						<span className="absolute right-0.5 top-0.5 rounded-full px-1 text-[9px] font-bold" style={{ background: "var(--red-bg)", color: "var(--red)" }}>
 							{pending}
@@ -283,7 +283,7 @@ function RacesPanel({ onClose }: { onClose: () => void }) {
 				)}
 				{s.races.length === 0 && (
 					<div className="px-3 py-2 text-[11.5px] leading-relaxed" style={{ color: "var(--fg-faint)" }}>
-						还没有竞赛。开一场:同一任务书在 N 个隔离 worktree 并行执行,收束后自动评分,你人工选优合入主线(也可在对话里让 agent 用 start_race 开赛)。
+						还没有竞赛。
 					</div>
 				)}
 				{s.races.map((race) => (
@@ -424,7 +424,7 @@ function AutomationPanel({ onClose }: { onClose: () => void }) {
 					<>
 						{s.automations.length === 0 && (
 							<div className="px-3 py-2 text-[11.5px] leading-relaxed" style={{ color: "var(--fg-faint)" }}>
-								还没有自动化任务。新建一条:定时(每日/cron)或事件(测试失败)触发 → agent 在隔离工作区干活 → 自动验证 → 评审队列收口。daemon 常驻,关 app 照跑。
+								还没有自动化任务。
 							</div>
 						)}
 						{s.automations.map((a) => {
@@ -636,13 +636,13 @@ function AutomationEditor({
 			<div className="flex gap-4 text-[11.5px]" style={{ color: "var(--fg-dim)" }}>
 				<label className="flex cursor-pointer items-center gap-1">
 					<input type="checkbox" checked={draft.autoVerify} onChange={(e) => onChange({ ...draft, autoVerify: e.target.checked })} />
-					完成后自动验证(测试+检查项→评审队列)
+					完成后自动验证
 				</label>
 			</div>
 			<div className="flex gap-4 text-[11.5px]" style={{ color: "var(--fg-dim)" }}>
 				<label className="flex cursor-pointer items-center gap-1">
 					<input type="checkbox" checked={draft.reuseSession} onChange={(e) => onChange({ ...draft, reuseSession: e.target.checked })} />
-					复用会话(连续对话;否则每 run 新会话)
+					复用会话
 				</label>
 			</div>
 			<div className="flex gap-1.5">
@@ -694,9 +694,6 @@ function ReviewPanel() {
 
 	return (
 		<div className="pb-2">
-			<div className="px-3 py-2 text-[11px] leading-relaxed" style={{ color: "var(--fg-faint)" }}>
-				自动提交 / 记忆建议 / 检查项经「通过」后方可并入主线(W6 人工门禁)
-			</div>
 			{items.map((it) => (
 				<div key={it.id} className="mx-2.5 my-2 rounded-lg border p-2.5" style={{ background: "var(--bg2)", borderColor: "var(--line)", opacity: it.state === "pending" ? 1 : 0.6 }}>
 					<div className="mb-0.5 flex items-center gap-1.5 text-[12.5px] font-medium">
@@ -746,7 +743,7 @@ function ReviewPanel() {
 						</div>
 					) : (
 						<div className="text-[11.5px]" style={{ color: it.state === "approved" ? "var(--green)" : "var(--fg-faint)" }}>
-							{it.state === "approved" ? "✓ 已通过" : it.state === "asked" ? "已追问(回聊)" : "已忽略(留档)"}
+							{it.state === "approved" ? "已通过" : it.state === "asked" ? "已追问" : "已忽略"}
 						</div>
 					)}
 				</div>

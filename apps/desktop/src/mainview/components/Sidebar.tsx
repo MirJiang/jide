@@ -106,7 +106,7 @@ function CommitReviewRow() {
 			<div className="mb-1 text-xs font-medium">提交并送审</div>
 			{ws.parentWorkspaceId && (
 				<div className="mb-1 text-[10.5px]" style={{ color: "var(--purple)" }}>
-					⎇ stacked:需先合入父分支({s.workspaces.find((x) => x.id === ws.parentWorkspaceId)?.branch ?? "父工作区"})
+					stacked:需先合入父分支({s.workspaces.find((x) => x.id === ws.parentWorkspaceId)?.branch ?? "父工作区"})
 				</div>
 			)}
 			<div className="flex gap-1.5">

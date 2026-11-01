@@ -103,7 +103,7 @@ export function MemorySuggestionCard({ suggestion }: { suggestion: { suggestionI
 	if (decided) {
 		return (
 			<div className="self-start rounded-lg border px-3 py-2 text-xs" style={{ background: "var(--bg2)", borderColor: decided === "adopted" ? "var(--green)" : "var(--line)", color: "var(--fg-dim)" }}>
-				{decided === "adopted" ? "✓ 已采纳并写入 " + suggestion.file : "已忽略(可在记忆面板手动补录)"}
+				{decided === "adopted" ? "已采纳并写入 " + suggestion.file : "已忽略"}
 			</div>
 		);
 	}
@@ -111,7 +111,7 @@ export function MemorySuggestionCard({ suggestion }: { suggestion: { suggestionI
 	return (
 		<div className="self-start w-min-[880px] rounded-xl border p-3" style={{ background: "linear-gradient(180deg,rgba(196,181,253,.08),var(--bg2))", borderColor: "#4b4370", maxWidth: "100%" }}>
 			<div className="mb-2 flex items-center gap-2 text-xs font-medium" style={{ color: "var(--purple)" }}>
-				✦ 记忆建议({suggestion.reason})
+				记忆建议({suggestion.reason})
 			</div>
 			<div className="mb-2 rounded-lg border p-2 font-mono text-[11.5px] leading-relaxed" style={{ background: "var(--bg0)", borderColor: "var(--line)", color: "var(--fg-dim)" }}>
 				<div style={{ color: "var(--purple)" }}>{suggestion.file}</div>

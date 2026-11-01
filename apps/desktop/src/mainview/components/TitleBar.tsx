@@ -198,11 +198,11 @@ export function TitleBar() {
 										)}
 										{w.parentWorkspaceId && (
 											<span className="rounded px-1 text-[9px]" style={{ background: "var(--purple-bg)", color: "var(--purple)" }} title={`stacked,基于 ${s.workspaces.find((x) => x.id === w.parentWorkspaceId)?.branch ?? w.parentWorkspaceId}`}>
-												⎇ {s.workspaces.find((x) => x.id === w.parentWorkspaceId)?.branch ?? "父工作区"}
+												{s.workspaces.find((x) => x.id === w.parentWorkspaceId)?.branch ?? "父工作区"}
 											</span>
 										)}
 										{w.id === s.activeWorkspaceId && (
-											<span className="text-[9px]" style={{ color: "var(--acc)" }}>● 当前</span>
+											<span className="text-[9px]" style={{ color: "var(--acc)" }}>当前</span>
 										)}
 									</span>
 									<span className="truncate text-[11px]" style={{ color: "var(--fg-faint)" }}>{w.path}</span>
@@ -315,32 +315,29 @@ export function TitleBar() {
 					{runOpen && (
 						<div className="jide-no-drag absolute right-0 top-[36px] z-50 min-w-[300px] rounded-lg border p-1" style={{ background: "var(--bg2)", borderColor: "var(--line2)", boxShadow: "0 10px 30px rgba(0,0,0,.5)" }}>
 							<RunMenuItem
-								icon="ri-flask-line"
-								label="① Agent 自测"
-								desc="后台静默跑选测 + 检查项,不打扰当前视图"
-								onClick={async () => {
-									setRunOpen(false);
-									await s.runTier("agent");
-								}}
-							/>
-							<RunMenuItem
-								icon="ri-global-line"
-								label="② 人侧运行 + 预览"
-								desc="起 dev server 并打开内嵌预览(与 agent 共引擎)"
-								onClick={async () => {
-									setRunOpen(false);
-									await s.runTier("human");
-								}}
-							/>
-							<RunMenuItem
-								icon="ri-terminal-box-line"
-								label="③ 调试(CDP 后门)"
-								desc="附着 CDP;断点调试器为非目标,仅协议后门"
-								onClick={async () => {
-									setRunOpen(false);
-									await s.runTier("cdp");
-								}}
-							/>
+									icon="ri-flask-line"
+									label="Agent 自测"
+									onClick={async () => {
+										setRunOpen(false);
+										await s.runTier("agent");
+									}}
+								/>
+								<RunMenuItem
+									icon="ri-global-line"
+									label="人侧运行 + 预览"
+									onClick={async () => {
+										setRunOpen(false);
+										await s.runTier("human");
+									}}
+								/>
+								<RunMenuItem
+									icon="ri-terminal-box-line"
+									label="调试(CDP 后门)"
+									onClick={async () => {
+										setRunOpen(false);
+										await s.runTier("cdp");
+									}}
+								/>
 						</div>
 					)}
 				</div>
@@ -363,14 +360,11 @@ export function TitleBar() {
 }
 
 
-function RunMenuItem({ icon, label, desc, onClick }: { icon: string; label: string; desc: string; onClick: () => void }) {
+function RunMenuItem({ icon, label, onClick }: { icon: string; label: string; onClick: () => void }) {
 	return (
-		<button className="flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left hover:bg-[var(--bg3)]" onClick={onClick}>
-			<Icon name={icon} size={15} className="mt-0.5" color="var(--acc)" />
-			<span className="flex flex-col gap-0.5">
-				<span className="text-xs font-medium">{label}</span>
-				<span className="text-[11px]" style={{ color: "var(--fg-faint)" }}>{desc}</span>
-			</span>
+		<button className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left hover:bg-[var(--bg3)]" onClick={onClick}>
+			<Icon name={icon} size={15} color="var(--acc)" />
+			<span className="text-xs font-medium">{label}</span>
 		</button>
 	);
 }

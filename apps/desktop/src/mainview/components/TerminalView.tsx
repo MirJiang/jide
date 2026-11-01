@@ -143,7 +143,7 @@ export function TerminalView() {
 						void s.askAgent("terminal", text || "(终端无输出)", "终端这段输出是什么情况?");
 					}}
 				>
-					✦ 问 agent
+					问 agent
 				</button>
 			</div>
 			<div ref={hostRef} className="min-h-0 flex-1 px-1 py-0.5" />

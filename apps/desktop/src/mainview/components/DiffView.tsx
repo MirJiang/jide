@@ -156,7 +156,7 @@ export function DiffView({ path }: { path: string }) {
 					<i style={{ color: "var(--green)", fontStyle: "normal" }}>+{added}</i>{" "}
 					<i style={{ color: "var(--red)", fontStyle: "normal" }}>−{removed}</i>
 				</span>
-				<span style={{ color: "var(--fg-faint)" }}>工作区 ⇄ HEAD · 双全文</span>
+				<span style={{ color: "var(--fg-faint)" }}>工作区 vs HEAD</span>
 				<div className="ml-auto flex items-center gap-1">
 					<button className="rounded px-1.5 hover:bg-[var(--bg3)]" title="上一处变更" onClick={() => goTo(cur - 1)}>
 						‹

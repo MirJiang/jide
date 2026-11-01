@@ -248,7 +248,6 @@ function ModelPage({ onNavigate }: { onNavigate: (c: Category) => void }) {
 			<SectionTitle>模型</SectionTitle>
 			<div className="mb-3 text-[11px] leading-relaxed" style={{ color: "var(--fg-faint)" }}>
 				目录读取自 pi(<span style={{ color: "var(--fg-dim)" }}>~/.pi</span> 模型配置,新增自定义模型请在 pi 侧配置)。
-				常用模型按序展示于对话面板顶部选择器,切换对当前会话即时生效;默认模型用于新会话。
 			</div>
 
 			<Row label="新会话默认模型" desc="空 = pi 自己的默认(不传 --model)">
@@ -259,7 +258,7 @@ function ModelPage({ onNavigate }: { onNavigate: (c: Category) => void }) {
 				/>
 			</Row>
 
-			<Row label="Router/精判模型" desc="委派编排与日志精判等隐性轻任务用;空 = 跟随默认模型">
+			<Row label="Router/精判模型" desc="空 = 跟随默认模型">
 				<Select
 					value={st.routerModel}
 					options={[["", "(跟随默认模型)"], ...favorites.map((k) => [k, nameOf(k)] as [string, string])]}
@@ -267,7 +266,7 @@ function ModelPage({ onNavigate }: { onNavigate: (c: Category) => void }) {
 				/>
 			</Row>
 
-			<Row label="编排模式" desc="会话获得委派工具(spawn_worker 等):agent 可把子任务拆给 Worker 池并行执行,完成后结果自动回喂;关闭则单会话直驱">
+			<Row label="编排模式" desc="开启后会话获得委派工具(spawn_worker 等),关闭则单会话直驱">
 				<Select
 					value={st.orchestrator ? "1" : "0"}
 					options={[
@@ -277,7 +276,7 @@ function ModelPage({ onNavigate }: { onNavigate: (c: Category) => void }) {
 					onChange={(v) => void s.saveSettings({ orchestrator: v === "1" })}
 				/>
 			</Row>
-			<Row label="开机自启" desc="登录 Windows 后自动启动 JIDE(写入注册表 Run 键;仅打包安装态生效,源码运行态自动跳过)">
+			<Row label="开机自启" desc="登录 Windows 后自动启动 JIDE(仅安装态生效)">
 				<Select
 					value={st.autostart ? "1" : "0"}
 					options={[
@@ -376,7 +375,7 @@ function ModelPage({ onNavigate }: { onNavigate: (c: Category) => void }) {
 				</div>
 			)}
 
-			<Row label="提供方密钥" desc="pi 侧认证(~/.pi/auth.json)与系统凭据库">
+			<Row label="提供方密钥" desc="pi 侧认证与系统凭据库">
 				<button
 					className="flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs hover:bg-[var(--bg2)]"
 					style={{ borderColor: "var(--line)", color: "var(--fg-dim)" }}
@@ -413,7 +412,7 @@ function ProvidersPage() {
 			<div className="mb-3 text-[11px] leading-relaxed" style={{ color: "var(--fg-faint)" }}>
 				真实模式的模型与凭据当前读取 ~/.pi(auth.json / models-store.json)。下列密钥库写入
 				<span style={{ color: "var(--fg-dim)" }}>系统凭据管理器</span>
-				(Windows PasswordVault,值不出库、不回传),为后续 provider 直连预留。
+				(Windows PasswordVault)。
 			</div>
 			{names === null ? (
 				<div className="py-3 text-xs" style={{ color: "var(--fg-faint)" }}>读取凭据库…</div>
@@ -421,7 +420,7 @@ function ProvidersPage() {
 				<div className="py-3 text-xs" style={{ color: "var(--fg-faint)" }}>暂无已存密钥</div>
 			) : (
 				names.map((n) => (
-					<Row key={n} label={n} desc="已存入系统凭据库">
+					<Row key={n} label={n}>
 						<button
 							className="flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs hover:bg-[var(--bg2)]"
 							style={{ borderColor: "var(--red)", color: "var(--red)" }}
@@ -472,10 +471,7 @@ function DevserverPage() {
 	return (
 		<div>
 			<SectionTitle>Dev 服务器</SectionTitle>
-			<div className="mb-3 text-[11px] leading-relaxed" style={{ color: "var(--fg-faint)" }}>
-				「运行 → ② 人侧运行 + 预览」的默认参数;下次运行时生效。
-			</div>
-			<Row label="端口" desc="dev server 监听端口(预览窗口与其同源)">
+			<Row label="端口" desc="预览窗口与其同源">
 				<NumInput value={draft.port} min={1024} max={65535} onChange={(v) => setDraft({ ...draft, port: v })} />
 			</Row>
 			<Row label="探测方式" desc="auto:http 探测 + 就绪日志特征(若填写)">
@@ -553,7 +549,7 @@ function TerminalPage() {
 	return (
 		<div>
 			<SectionTitle>终端</SectionTitle>
-			<Row label="默认 shell" desc="新开终端使用;pwsh(PowerShell 7)需自行安装,缺失时回退 cmd">
+			<Row label="默认 shell" desc="pwsh 缺失时回退 cmd">
 				<Select
 					value={st.terminalShell}
 					options={[
@@ -573,16 +569,16 @@ function AboutPage() {
 	return (
 		<div>
 			<SectionTitle>关于</SectionTitle>
-			<Row label="版本" desc="JIDE @jide/desktop 0.1.0">
+			<Row label="版本">
 				<span className="font-mono text-xs" style={{ color: "var(--fg-dim)" }}>0.1.0</span>
 			</Row>
-			<Row label="宿主" desc="bun 主进程标识(app.hello)">
+			<Row label="宿主">
 				<span className="font-mono text-xs" style={{ color: "var(--fg-dim)" }}>{s.hostName || "—"}</span>
 			</Row>
-			<Row label="协议版本" desc="壳 ↔ 宿主类型化协议(PROTOCOL_VERSION)">
+			<Row label="协议版本">
 				<span className="font-mono text-xs" style={{ color: "var(--fg-dim)" }}>v{PROTOCOL_VERSION}</span>
 			</Row>
-			<Row label="运行时目录" desc="信任状态 / 计划 / 设置等持久化数据">
+			<Row label="运行时目录">
 				<span className="font-mono text-xs" style={{ color: "var(--fg-dim)" }}>~/.jide</span>
 			</Row>
 		</div>
