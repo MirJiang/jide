@@ -83,6 +83,16 @@ export class ReviewQueue {
 		return [...this.items.values()].filter((i) => !i.workspaceId || i.workspaceId.startsWith(projectId));
 	}
 
+	/** 按 sha 定位 pending 的 commit 评审项(竞赛裁定入队后定位;P3) */
+	pendingCommitItem(workspaceId: string, sha: string): { id: string } | undefined {
+		for (const item of this.items.values()) {
+			if (item.kind === "commit" && item.state === "pending" && item.workspaceId === workspaceId && item.sha === sha) {
+				return { id: item.id };
+			}
+		}
+		return undefined;
+	}
+
 	/** 计划自动提交入队(commit 型) */
 	enqueueCommit(workspaceId: string, branch: string, sha: string, message: string) {
 		this.push({

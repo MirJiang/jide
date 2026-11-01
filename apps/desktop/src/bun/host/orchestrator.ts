@@ -116,6 +116,25 @@ export class OrchestratorManager {
 		return this.workers.get(id);
 	}
 
+	/* ---------------- Worker 更新订阅(P3 竞赛管理器等) ---------------- */
+
+	private workerUpdateCbs = new Set<(rec: WorkerRecord) => void>();
+
+	onWorkerUpdate(cb: (rec: WorkerRecord) => void): () => void {
+		this.workerUpdateCbs.add(cb);
+		return () => this.workerUpdateCbs.delete(cb);
+	}
+
+	private notifyWorkerUpdate(rec: WorkerRecord) {
+		for (const cb of this.workerUpdateCbs) {
+			try {
+				cb({ ...rec });
+			} catch {
+				/* 订阅者异常不影响池 */
+			}
+		}
+	}
+
 	/* ---------------- Router 注册与回喂 ---------------- */
 
 	/** 扩展每次桥调用带上发起会话 id;首次见到即注册为 Router(单会话语义下即当前对话) */
@@ -207,6 +226,7 @@ export class OrchestratorManager {
 			...(opts.speculative ? { speculative: true } : {}),
 		};
 		this.workers.set(rec.id, rec);
+		this.notifyWorkerUpdate(rec);
 		this.queue.push({ rec, objective: opts.objective, modelKey: opts.modelKey, timeoutMin: opts.timeoutMin ?? this.deps.workerTimeoutMin ?? 30 });
 		this.pump();
 		return rec;
@@ -227,6 +247,7 @@ export class OrchestratorManager {
 	private async execWorker(rec: WorkerRecord, objective: string, modelKey?: string, timeoutMin: number, speculative?: boolean) {
 		this.running.set(rec.id, rec.sessionId);
 		rec.status = "running";
+		this.notifyWorkerUpdate(rec);
 		if (speculative) {
 			rec.speculative = true;
 			// 投机执行:必须落隔离 worktree(验证绿才提交,W5/W6 门禁语义)
@@ -311,6 +332,7 @@ export class OrchestratorManager {
 		} finally {
 			rec.durationMs = Date.now() - rec.startedAt;
 			this.running.delete(rec.id);
+			this.notifyWorkerUpdate(rec);
 			this.emit({ type: "host.log", level: rec.status === "done" ? "info" : "warn", message: `Worker ${rec.id} ${rec.status}${rec.error ? `:${rec.error.slice(0, 80)}` : ""}` });
 			await this.notifyRouter(
 				rec.status === "done"

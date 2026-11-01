@@ -36,6 +36,7 @@ import { DevLogPump } from "./host/dev-log-pump";
 import { ModelCatalog } from "./host/model-catalog";
 import { AutomationManager } from "./host/automation-manager";
 import { OrchestratorManager } from "./host/orchestrator";
+import { RaceManager } from "./host/race-manager";
 import { EventStore } from "./host/event-store";
 import { applyAutostart, launcherPath } from "./host/autostart";
 import { mapFilesToTests as mapTests } from "./host/test-runner";
@@ -369,6 +370,21 @@ bridge.register("stop_worker", async (_wid, p) => {
 		return brText(String(err?.message ?? err), true);
 	}
 });
+bridge.register("start_race", async (workspaceId, p) => {
+	try {
+		if (!p.objective) return brText("参数不足:objective 必填", true);
+		const raceId = await races.start({
+			objective: p.objective,
+			workspaceId: p.workspaceId || workspaceId,
+			variants: p.variants,
+			timeoutMin: p.timeoutMin,
+			routerSessionId: p.__router,
+		});
+		return brText(`竞赛 ${raceId} 已开赛(${(p.variants?.length ?? 3)} 路并行,隔离 worktree)。收束后自动评分,用户在竞赛面板人工选优;结果也会回喂本对话。`);
+	} catch (err: any) {
+		return brText(String(err?.message ?? err), true);
+	}
+});
 
 host.bindBridge(bridge);
 
@@ -433,6 +449,28 @@ review.bindEmitter(emit);
 orchestrator.bindEmitter(emit);
 orchestrator.startWatchdog();
 checks.setCwdResolver((workspaceId) => workspaces.locate(workspaceId).cwd);
+
+/* ---- 竞赛域(P3):fan-out 一拖 N 对比选优 ---- */
+const races = new RaceManager({
+	orchestrator,
+	workspaces,
+	review: {
+		enqueueCommit: (workspaceId, branch, sha, message) => review.enqueueCommit(workspaceId, branch, sha, message),
+		pendingCommitItem: (workspaceId, sha) => review.pendingCommitItem(workspaceId, sha),
+		decide: (id, decision) => review.decide(id, decision),
+	},
+	verify: {
+		scanTests: scanTestFiles,
+		gitStatus: (workspaceId) => workspaces.gitStatus(workspaceId),
+		mapTests: mapTests,
+		runTests: (cwd, files_, total) => runner.run(cwd, files_, total),
+		runChecks: (workspaceId) => checks.run(workspaceId),
+	},
+	runtimeRoot: RUNTIME_ROOT,
+});
+races.setCommitFn((workspaceId, message) => workspaces.commitAll(workspaceId, message, true));
+races.bindEmitter(emit);
+races.startWatching();
 
 /* ---- 自动化域(P1.5) ---- */
 const automations = new AutomationManager({
@@ -982,6 +1020,43 @@ const handlers = {
 	/* ---------- 编排域(P2) ---------- */
 	"orchestrator.workers": () => {
 		return { ok: true, workers: orchestrator.list() };
+	},
+
+	/* ---------- 竞赛域(P3) ---------- */
+	"races.list": () => {
+		return { ok: true, races: races.list() };
+	},
+	"races.start": async ({ objective, workspaceId, variants, timeoutMin, __router }: any) => {
+		try {
+			const raceId = await races.start({ objective, workspaceId, variants, timeoutMin, routerSessionId: __router });
+			return { ok: true, raceId };
+		} catch (err: any) {
+			return { ok: false, error: String(err?.message ?? err) };
+		}
+	},
+	"races.resolve": async ({ raceId, winnerWorkerId, note }: any) => {
+		try {
+			const r = await races.resolve(raceId, winnerWorkerId, note);
+			return { ok: true, ...r };
+		} catch (err: any) {
+			return { ok: false, error: String(err?.message ?? err) };
+		}
+	},
+	"races.discard": async ({ raceId, note }: any) => {
+		try {
+			await races.discard(raceId, note);
+			return { ok: true };
+		} catch (err: any) {
+			return { ok: false, error: String(err?.message ?? err) };
+		}
+	},
+	"races.cancel": async ({ raceId }: any) => {
+		try {
+			await races.cancel(raceId);
+			return { ok: true };
+		} catch (err: any) {
+			return { ok: false, error: String(err?.message ?? err) };
+		}
 	},
 } satisfies Omit<
 	HostRequestHandlers,

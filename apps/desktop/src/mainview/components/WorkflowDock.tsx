@@ -16,12 +16,18 @@ interface ReviewItemView {
 }
 
 export function WorkflowDock() {
-	// 三个面板独立开关:窄条按钮或标题行 × 均可 toggle,互不挤占
-	const [open, setOpen] = useState<{ plan: boolean; review: boolean; auto: boolean }>({ plan: true, review: false, auto: false });
+	// 四个面板独立开关:窄条按钮或标题行 × 均可 toggle,互不挤占
+	const [open, setOpen] = useState<{ plan: boolean; review: boolean; auto: boolean; race: boolean }>({
+		plan: true,
+		review: false,
+		auto: false,
+		race: false,
+	});
 	const s = useIDE();
 	const pending = s.reviewPending;
-	const toggle = (k: "plan" | "review" | "auto") => setOpen((o) => ({ ...o, [k]: !o[k] }));
-	const anyOpen = open.plan || open.review || open.auto;
+	const toggle = (k: "plan" | "review" | "auto" | "race") => setOpen((o) => ({ ...o, [k]: !o[k] }));
+	const anyOpen = open.plan || open.review || open.auto || open.race;
+	const racesAwaiting = s.races.filter((r) => r.status === "awaiting-review").length;
 
 	return (
 		<div className="flex" style={{ flex: "0 0 auto" }}>
@@ -30,9 +36,17 @@ export function WorkflowDock() {
 					{open.plan && (
 						<section
 							className="flex min-h-0 flex-1 flex-col"
-							style={{ borderBottom: open.review || open.auto ? "1px solid var(--line)" : undefined }}
+							style={{ borderBottom: open.review || open.auto || open.race ? "1px solid var(--line)" : undefined }}
 						>
 							<PlanDockInner onClose={() => toggle("plan")} />
+						</section>
+					)}
+					{open.race && (
+						<section
+							className="flex min-h-0 flex-1 flex-col"
+							style={{ borderBottom: open.review || open.auto ? "1px solid var(--line)" : undefined }}
+						>
+							<RacesPanel onClose={() => toggle("race")} />
 						</section>
 					)}
 					{open.auto && (
@@ -75,6 +89,19 @@ export function WorkflowDock() {
 					onClick={() => toggle("plan")}
 				>
 					☑
+				</button>
+				<button
+					title="竞赛 · 一拖 N 对比选优"
+					className="relative flex h-[38px] w-[38px] items-center justify-center rounded-lg"
+					style={{ color: open.race ? "var(--acc)" : "var(--fg-faint)", background: open.race ? "var(--bg2)" : undefined }}
+					onClick={() => toggle("race")}
+				>
+					<Icon name="ri-trophy-line" size={19} />
+					{racesAwaiting > 0 && (
+						<span className="absolute right-0.5 top-0.5 rounded-full px-1 text-[9px] font-bold" style={{ background: "var(--acc)", color: "var(--bg0)" }}>
+							{racesAwaiting}
+						</span>
+					)}
 				</button>
 				<button
 					title="自动化 · 定时/事件任务"
@@ -145,6 +172,179 @@ function blankAutomation(projectId: string | null, workspaceId: string | null): 
 		timeoutMin: 30,
 		createdAt: 0,
 	};
+}
+
+/* ---------------- 竞赛面板(P3):开赛 / 对比 / 选优 ---------------- */
+
+function RacesPanel({ onClose }: { onClose: () => void }) {
+	const s = useIDE();
+	const [creating, setCreating] = useState(false);
+	const [objective, setObjective] = useState("");
+	const [count, setCount] = useState(3);
+	const [models, setModels] = useState<string[]>(["", "", "", ""]);
+	const [err, setErr] = useState("");
+
+	useEffect(() => {
+		void s.refreshRaces();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
+
+	const modelOptions: Array<[string, string]> = [["", "pi 默认"], ...s.modelCatalog.map((m) => [m.key, m.name] as [string, string])];
+	const field = "w-full rounded border bg-transparent px-1.5 py-1 text-[11px] outline-none focus:border-[var(--acc)]";
+	const fieldStyle = { borderColor: "var(--line)", color: "var(--fg)" } as const;
+
+	const start = async () => {
+		setErr("");
+		const variants = Array.from({ length: count }, (_, i) => ({ modelKey: models[i] || undefined }));
+		const e = await s.startRace(objective, variants);
+		if (e) setErr(e);
+		else {
+			setObjective("");
+			setCreating(false);
+		}
+	};
+
+	const scoreColor = (n?: number) => (n === undefined ? "var(--fg-faint)" : n >= 100 ? "var(--green)" : n > 0 ? "var(--yellow)" : "var(--red)");
+
+	return (
+		<>
+			<div className="flex h-[34px] flex-none items-center gap-1 px-3 text-[11px] font-semibold" style={{ letterSpacing: 1.5, color: "var(--fg-dim)" }}>
+				竞赛
+				<button
+					title="新建竞赛"
+					className="ml-auto flex h-5 w-5 items-center justify-center rounded hover:bg-[var(--bg2)]"
+					style={{ color: "var(--acc)" }}
+					onClick={() => setCreating((v) => !v)}
+				>
+					<Icon name="ri-add-line" size={15} />
+				</button>
+				<button
+					title="收起"
+					className="flex h-5 w-5 items-center justify-center rounded hover:bg-[var(--bg2)]"
+					style={{ color: "var(--fg-faint)" }}
+					onClick={onClose}
+				>
+					×
+				</button>
+			</div>
+			<div className="min-h-0 flex-1 overflow-y-auto pb-2">
+				{err && (
+					<div className="mx-2.5 mb-2 rounded border px-2 py-1 text-[11px]" style={{ borderColor: "var(--red)", color: "var(--red)" }}>
+						{err}
+					</div>
+				)}
+				{creating && (
+					<div className="mx-2.5 mb-2 flex flex-col gap-1.5 rounded-lg border p-2" style={{ background: "var(--bg2)", borderColor: "var(--acc-line)" }}>
+						<textarea rows={3} className={field} style={fieldStyle} placeholder="竞赛任务书(自包含:做什么/验收标准/边界)" value={objective} onChange={(e) => setObjective(e.target.value)} />
+						<div className="flex items-center gap-1.5">
+							<span className="text-[11px]" style={{ color: "var(--fg-faint)" }}>路数</span>
+							<select className={field} style={{ ...fieldStyle, width: 56 }} value={count} onChange={(e) => setCount(Number(e.target.value))}>
+								{[2, 3, 4].map((n) => (
+									<option key={n} value={n}>{n}</option>
+								))}
+							</select>
+						</div>
+						{Array.from({ length: count }, (_, i) => (
+							<div key={i} className="flex items-center gap-1.5">
+								<span className="w-8 text-[11px]" style={{ color: "var(--fg-faint)" }}>路{i + 1}</span>
+								<select className={field} style={fieldStyle} value={models[i] ?? ""} onChange={(e) => setModels((m) => m.map((x, j) => (j === i ? e.target.value : x)))}>
+									{modelOptions.map(([v, lbl]) => (
+										<option key={v} value={v}>{lbl}</option>
+									))}
+								</select>
+							</div>
+						))}
+						<button className="jide-btn px-3 py-1 text-xs" disabled={!objective.trim()} onClick={() => void start()}>
+							<Icon name="ri-flag-line" size={13} />
+							开赛
+						</button>
+					</div>
+				)}
+				{s.races.length === 0 && (
+					<div className="px-3 py-2 text-[11.5px] leading-relaxed" style={{ color: "var(--fg-faint)" }}>
+						还没有竞赛。开一场:同一任务书在 N 个隔离 worktree 并行执行,收束后自动评分,你人工选优合入主线(也可在对话里让 agent 用 start_race 开赛)。
+					</div>
+				)}
+				{s.races.map((race) => (
+					<div key={race.id} className="mx-2.5 my-2 rounded-lg border p-2.5" style={{ background: "var(--bg2)", borderColor: race.status === "awaiting-review" ? "var(--acc-line)" : "var(--line)" }}>
+						<div className="flex items-center gap-1.5">
+							<Icon
+								name={race.status === "resolved" && race.resolution === "merged" ? "ri-trophy-fill" : "ri-flag-line"}
+								size={13}
+								color={race.status === "awaiting-review" ? "var(--acc)" : "var(--fg-faint)"}
+							/>
+							<span className="truncate text-[12px] font-medium">{race.objective.slice(0, 40)}</span>
+							<span className="ml-auto flex-none text-[10px]" style={{ color: race.status === "awaiting-review" ? "var(--acc)" : "var(--fg-faint)" }}>
+								{race.status === "running" ? "进行中" : race.status === "awaiting-review" ? "待选优" : race.status === "cancelled" ? "已取消" : race.resolution === "merged" ? "已合入" : "已丢弃"}
+							</span>
+						</div>
+						<div className="mt-1.5 flex flex-col gap-1">
+							{race.entries.map((e) => (
+								<div key={e.workerId} className="rounded px-1.5 py-1" style={{ background: "var(--bg3)" }}>
+									<div className="flex items-center gap-1.5 text-[11px]">
+										<span className="font-mono" style={{ color: "var(--fg-faint)" }}>{e.workerId}</span>
+										{e.score !== undefined && (
+											<span className="rounded px-1 text-[10px] font-bold" style={{ background: "var(--bg1)", color: scoreColor(e.score) }}>
+												{e.score} 分
+											</span>
+										)}
+										<span className="ml-auto text-[10px]" style={{ color: "var(--fg-faint)" }}>
+											{e.status === "running" ? "运行中" : e.status === "queued" ? "排队" : e.status === "done" ? `${e.changedFiles?.length ?? 0} 文件变更` : e.status}
+										</span>
+									</div>
+									{e.summary && (
+										<div className="mt-0.5 text-[10.5px] leading-snug" style={{ color: "var(--fg-dim)" }}>
+											{e.summary.slice(0, 100)}
+										</div>
+									)}
+									{e.error && (
+										<div className="mt-0.5 text-[10.5px]" style={{ color: "var(--red)" }}>
+											{e.error.slice(0, 80)}
+										</div>
+									)}
+									{race.status === "awaiting-review" && e.sha && (
+										<button
+											className="mt-1 flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] hover:bg-[var(--bg2)]"
+											style={{ borderColor: "var(--green)", color: "var(--green)" }}
+											onClick={() => void s.resolveRace(race.id, e.workerId)}
+										>
+											<Icon name="ri-trophy-line" size={12} />
+											选为最优并合入
+										</button>
+									)}
+								</div>
+							))}
+						</div>
+						<div className="mt-1.5 flex gap-1.5">
+							{race.status === "running" && (
+								<button
+									className="rounded border px-2 py-0.5 text-[11px] hover:bg-[var(--bg2)]"
+									style={{ borderColor: "var(--line)", color: "var(--fg-dim)" }}
+									onClick={() => void s.cancelRace(race.id)}
+								>
+									取消
+								</button>
+							)}
+							{(race.status === "awaiting-review" || race.status === "running") && (
+								<button
+									className="rounded border px-2 py-0.5 text-[11px] hover:bg-[var(--bg2)]"
+									style={{ borderColor: "var(--line)", color: "var(--fg-faint)" }}
+									onClick={() => void s.discardRace(race.id)}
+								>
+									全部丢弃
+								</button>
+							)}
+							{race.status === "resolved" && race.note && (
+								<span className="text-[10.5px]" style={{ color: "var(--fg-faint)" }}>
+									{race.note}
+								</span>
+							)}
+						</div>
+					</div>
+				))}
+			</div>
+		</>
+	);
 }
 
 function AutomationPanel({ onClose }: { onClose: () => void }) {

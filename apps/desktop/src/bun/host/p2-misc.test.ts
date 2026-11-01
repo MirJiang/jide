@@ -23,7 +23,7 @@ async function loadTools(env: Record<string, string>, cacheKey: string) {
 }
 
 describe("jide-orchestrator 扩展(委派工具)", () => {
-	test("JIDE_ORCH=1:注册 5 个委派工具,execute 透传 __router", async () => {
+	test("JIDE_ORCH=1:注册 6 个委派工具,execute 透传 __router", async () => {
 		const registered = await loadTools(
 			{ JIDE_ORCH: "1", JIDE_BRIDGE_URL: "http://127.0.0.1:1", JIDE_BRIDGE_TOKEN: "t", JIDE_WORKSPACE_ID: "p:w" },
 			"on",
@@ -34,6 +34,7 @@ describe("jide-orchestrator 扩展(委派工具)", () => {
 			"worker_status",
 			"send_to_worker",
 			"stop_worker",
+			"start_race",
 		]);
 		let seen: any = null;
 		const orig = globalThis.fetch;

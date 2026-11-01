@@ -148,6 +148,38 @@ export interface WorkerRecordView {
 	verified?: "green" | "red" | "skipped";
 }
 
+/* ---------------- 竞赛域(P3:fan-out 一拖 N 对比选优) ---------------- */
+
+export interface RaceEntry {
+	/** 即 Worker id */
+	workerId: string;
+	workspaceId: string;
+	branch: string;
+	modelKey: string;
+	status: WorkerRecordView["status"];
+	/** 自动打分(0-100:测试通过与检查项通过各占一半;人工终审) */
+	score?: number;
+	verified?: "green" | "red" | "skipped";
+	summary?: string;
+	/** 收口提交(评审队列合并用) */
+	sha?: string;
+	changedFiles?: string[];
+	error?: string;
+}
+
+export interface Race {
+	id: string;
+	objective: string;
+	entries: RaceEntry[];
+	status: "running" | "awaiting-review" | "resolved" | "cancelled";
+	winnerEntryId?: string;
+	createdAt: number;
+	resolvedAt?: number;
+	resolution?: "merged" | "discarded";
+	/** 裁定说明(选优理由/丢弃原因) */
+	note?: string;
+}
+
 /* ------------------------------------------------------------------ */
 /* UI → 宿主:请求(全部枚举)                                        */
 /* ------------------------------------------------------------------ */
@@ -259,6 +291,36 @@ export interface HostRequestShapes {
 	"automations.runs": {
 		params: { id: string };
 		response: { ok: true; runs: AutomationRun[] } | { ok: false; error: string };
+	};
+
+	/* ---------------- 竞赛域(P3) ---------------- */
+
+	"races.list": {
+		params: {};
+		response: { ok: true; races: Race[] } | { ok: false; error: string };
+	};
+	/**
+	 * 开赛:同一任务书播 N 个隔离 worktree(可逐个指定模型),各自 Worker 执行,
+	 * 收束后自动打分,等人工选优。variants 缺省 = 3 × pi 默认模型。
+	 */
+	"races.start": {
+		params: { objective: string; workspaceId: string; variants?: Array<{ modelKey?: string }>; timeoutMin?: number };
+		response: { ok: true; raceId: string } | { ok: false; error: string };
+	};
+	/** 选优:胜者分支合入主线(经评审队列合并逻辑),其余 worktree 清理 */
+	"races.resolve": {
+		params: { raceId: string; winnerWorkerId: string; note?: string };
+		response: { ok: true; mergedSha?: string } | { ok: false; error: string };
+	};
+	/** 全部丢弃:清理所有 entry worktree */
+	"races.discard": {
+		params: { raceId: string; note?: string };
+		response: { ok: true } | { ok: false; error: string };
+	};
+	/** 取消运行中竞赛:中断 Worker + 清理 worktree */
+	"races.cancel": {
+		params: { raceId: string };
+		response: { ok: true } | { ok: false; error: string };
 	};
 
 	/* ---------------- 工作区域(W1-W4) ---------------- */
@@ -875,6 +937,8 @@ export type HostEvent =
 	| { type: "automation.updated"; seq: number; automationId: string }
 	/** 自动化运行记录变化(排队/开始/结束;UI 实时刷新运行历史) */
 	| { type: "automation.run"; seq: number; run: AutomationRun }
+	/** 竞赛状态变化(P3:开赛/收口/裁定) */
+	| { type: "race.updated"; seq: number; raceId: string }
 	/**
 	 * pi 扩展 UI 请求转发(RPC Extension UI 子协议,v3)。
 	 * dialog 类(select/confirm/input/editor)须以 session.respondUI 回复(带 requestId);
@@ -956,6 +1020,7 @@ const EVENT_TYPES: ReadonlySet<string> = new Set<HostEventType>([
 	"agent.ui.request",
 	"automation.updated",
 	"automation.run",
+	"race.updated",
 	"host.log",
 ]);
 

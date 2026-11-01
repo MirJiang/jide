@@ -139,6 +139,23 @@ export default function (pi: any) {
 				workerId: Type.String(),
 			}),
 		}),
+		orchTool({
+			name: "start_race",
+			label: "开赛(一拖 N)",
+			description:
+				"竞赛:同一任务书在 N 个隔离 worktree 各派一个 Worker 并行执行,收束后自动评分(测试+检查项)。适合'多方案不知哪个好'的任务(如两种修复思路)。完成后用户在竞赛面板人工选优合入;你在对话里会收到结果。",
+			promptSnippet: "start_race({objective, variants}) → raceId:多方案并行竞赛,用户人工选优。",
+			promptGuidelines: ["竞赛任务书必须自含验收标准;variants 可为不同思路指定不同模型"],
+			parameters: Type.Object({
+				objective: Type.String({ description: "自包含任务书(做什么/验收标准/边界)" }),
+				variants: Type.Optional(
+					Type.Array(Type.Object({ modelKey: Type.Optional(Type.String()) }), {
+						description: "每路模型配置;缺省 3 路全默认模型(最多 4 路)",
+					}),
+				),
+				timeoutMin: Type.Optional(Type.Number({ description: "单 Worker 超时分钟(默认 30)" })),
+			}),
+		}),
 	];
 
 	for (const t of tools) pi.registerTool(t);

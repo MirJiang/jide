@@ -230,6 +230,27 @@ export class WorkspaceManager {
 		};
 	}
 
+	/** P3:移除 worktree(竞赛落选清理/手动清理),连带删除其分支;Default 不可移除 */
+	async removeWorktree(projectId: string, workspaceId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+		const rec = this.store.projects[projectId];
+		if (!rec) return { ok: false as const, error: "项目未打开" };
+		const info = (await this.listWorkspaces(projectId)).find((w) => w.id === workspaceId);
+		if (!info) return { ok: false as const, error: "工作区不存在" };
+		if (info.kind === "default") return { ok: false as const, error: "Default 工作区不可移除" };
+		const rm = await runGit(rec.root, ["worktree", "remove", "--force", info.path]);
+		if (rm.code !== 0) return { ok: false as const, error: `worktree remove 失败:${rm.err || rm.out}` };
+		if (info.branch && info.branch !== "(detached)") {
+			const bd = await runGit(rec.root, ["branch", "-D", info.branch]);
+			if (bd.code !== 0) {
+				// 删分支失败不阻塞(worktree 已移除),仅记录
+				this.emit({ type: "host.log", level: "warn", message: `分支删除失败(${info.branch}):${bd.err || bd.out}` });
+			}
+		}
+		await this.listWorkspaces(projectId); // 刷缓存
+		this.emit({ type: "host.log", level: "info", message: `工作区已移除:${info.branch ?? info.path}` });
+		return { ok: true as const };
+	}
+
 	/** W4:原子切换(上下文整套换入:由上层按 activeWorkspaceId 重建会话/终端) */
 	async switchWorkspace(projectId: string, workspaceId: string) {
 		const rec = this.store.projects[projectId];

@@ -11,6 +11,7 @@ import {
 	type Automation,
 	type AutomationRun,
 	type HostEvent,
+	type Race,
 	type SessionStatus,
 	type JideSettings,
 	type PiModelInfo,
@@ -150,6 +151,14 @@ interface IDEStore {
 	deleteAutomation(id: string): Promise<void>;
 	runAutomation(id: string): Promise<void>;
 
+	/** 竞赛(P3):fan-out 一拖 N 对比选优 */
+	races: Race[];
+	refreshRaces(): Promise<void>;
+	startRace(objective: string, variants: Array<{ modelKey?: string }>): Promise<string | null>;
+	resolveRace(raceId: string, winnerWorkerId: string): Promise<void>;
+	discardRace(raceId: string): Promise<void>;
+	cancelRace(raceId: string): Promise<void>;
+
 	/** 外部投递待办(终端/测试/评审 →「问 agent」):ChatPanel 消费后清空,填入输入框待用户确认发送 */
 	chatPrefill: string | null;
 	askAgent(source: string, contextText: string, question: string): Promise<void>;
@@ -249,6 +258,7 @@ export const useIDE = create<IDEStore>((set, get) => ({
 	chatPrefill: null,
 	automations: [],
 	automationRuns: {},
+	races: [],
 
 	async boot(client) {
 		set({ client });
@@ -587,6 +597,50 @@ export const useIDE = create<IDEStore>((set, get) => ({
 		if (!r.ok) set((s) => ({ logs: [...s.logs, `自动化启动失败:${r.error}`] }));
 	},
 
+	async refreshRaces() {
+		const { client } = get();
+		if (!client) return;
+		const r = await client.request("races.list", {});
+		if (r.ok) set({ races: r.races });
+	},
+
+	async startRace(objective, variants) {
+		const { client, activeWorkspaceId } = get();
+		if (!client || !activeWorkspaceId) return "未连接宿主或未选工作区";
+		const r = await client.request("races.start", { objective, workspaceId: activeWorkspaceId, variants });
+		if (r.ok) {
+			await get().refreshRaces();
+			return null;
+		}
+		return r.error;
+	},
+
+	async resolveRace(raceId, winnerWorkerId) {
+		const { client } = get();
+		if (!client) return;
+		const r = await client.request("races.resolve", { raceId, winnerWorkerId });
+		if (r.ok) {
+			await get().refreshRaces();
+			void get().refreshGit();
+		} else {
+			set((s) => ({ logs: [...s.logs, `选优失败:${r.error}`] }));
+		}
+	},
+
+	async discardRace(raceId) {
+		const { client } = get();
+		if (!client) return;
+		await client.request("races.discard", { raceId });
+		await get().refreshRaces();
+	},
+
+	async cancelRace(raceId) {
+		const { client } = get();
+		if (!client) return;
+		await client.request("races.cancel", { raceId });
+		await get().refreshRaces();
+	},
+
 	async rebuild() {
 		const { client, chat } = get();
 		if (!client || !chat.sessionId) return;
@@ -809,6 +863,9 @@ export const useIDE = create<IDEStore>((set, get) => ({
 				});
 				break;
 			}
+			case "race.updated":
+				void get().refreshRaces();
+				break;
 			case "agent.ui.request":
 				// pi 扩展 UI 请求:dialog 入待办卡片;notify 直落日志流(火后不管)
 				if (event.method === "notify") {

@@ -276,6 +276,11 @@ const DAEMON_METHODS = [
 	"automations.run",
 	"automations.runs",
 	"orchestrator.workers",
+	"races.list",
+	"races.start",
+	"races.resolve",
+	"races.discard",
+	"races.cancel",
 ] as const;
 
 type DaemonMethod = (typeof DAEMON_METHODS)[number];
