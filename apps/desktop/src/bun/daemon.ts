@@ -564,6 +564,36 @@ const handlers = {
 			return { ok: false, error: String(err?.message ?? err) };
 		}
 	},
+	"session.setThinkingLevel": async ({ sessionId, level }: any) => {
+		try {
+			await host.setThinkingLevel(sessionId, level);
+			return { ok: true, level };
+		} catch (err: any) {
+			return { ok: false, error: String(err?.message ?? err) };
+		}
+	},
+	"session.getThinkingLevels": async ({ sessionId }: any) => {
+		try {
+			return { ok: true, levels: await host.getThinkingLevels(sessionId) };
+		} catch (err: any) {
+			return { ok: false, error: String(err?.message ?? err) };
+		}
+	},
+	"session.setPermissionMode": ({ sessionId, mode }: any) => {
+		try {
+			if (mode !== "auto" && mode !== "confirm") throw new Error(`权限模式不合法:${mode}`);
+			const cwd = host.getSession(sessionId)?.cwd;
+			if (!cwd) throw new Error("会话不存在");
+			// guard 扩展每次 bash tool_call 读取(工作区级语义:同项目会话共享)
+			const dir = join(cwd, ".jide");
+			mkdirSync(dir, { recursive: true });
+			writeFileSync(join(dir, "guard-mode.json"), JSON.stringify({ mode }));
+			host.log("info", `权限模式已切换:${mode === "confirm" ? "执行前确认" : "自动"}`);
+			return { ok: true };
+		} catch (err: any) {
+			return { ok: false, error: String(err?.message ?? err) };
+		}
+	},
 	"session.askWithContext": ({ workspaceId, source, contextText }: any) => {
 		emit({ type: "host.log", level: "info", message: `[${source}] ${contextText.slice(0, 200)}` });
 		return { ok: true };

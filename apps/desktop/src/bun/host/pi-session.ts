@@ -171,6 +171,19 @@ export class PiSession implements AgentEngine {
 		return label;
 	}
 
+	/** 设置思考等级(pi set_thinking_level;返回 pi 回执) */
+	async setThinkingLevel(level: string): Promise<unknown> {
+		if (!this.client) throw new Error("pi 进程已退出,请重建会话");
+		return this.client.setThinkingLevel(level);
+	}
+
+	/** 当前模型支持的思考等级 */
+	async getThinkingLevels(): Promise<string[]> {
+		if (!this.client) throw new Error("pi 进程已退出,请重建会话");
+		const r = await this.client.getAvailableThinkingLevels();
+		return Array.isArray(r?.levels) ? r.levels.map(String) : [];
+	}
+
 	/** 回复扩展 UI 请求(RPC Extension UI 子协议;requestId 为 pi 侧 id 原样) */
 	respondUI(resp: { requestId: string; value?: string; confirmed?: boolean; cancelled?: boolean }) {
 		if (!this.client) return; // 进程已退出,响应无处可去

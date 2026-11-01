@@ -185,6 +185,16 @@ export class PiRpcClient {
 		return this.request({ type: "set_model", provider, modelId }) as Promise<any>;
 	}
 
+	/** 设置思考等级(pi set_thinking_level) */
+	setThinkingLevel(level: string) {
+		return this.request({ type: "set_thinking_level", level }) as Promise<any>;
+	}
+
+	/** 当前模型支持的思考等级(pi get_available_thinking_levels;{levels: string[]}) */
+	getAvailableThinkingLevels() {
+		return this.request({ type: "get_available_thinking_levels" }) as Promise<{ levels: string[] }>;
+	}
+
 	/** 列出全部已配置模型(pi get_available_models;{models: Model[]}) */
 	getAvailableModels() {
 		return this.request({ type: "get_available_models" }, 20_000) as Promise<{ models: any[] }>;

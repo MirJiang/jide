@@ -251,6 +251,31 @@ export interface HostRequestShapes {
 		params: { sessionId: string; provider: string; modelId: string };
 		response: { ok: true; modelLabel: string } | { ok: false; error: string };
 	};
+	/** 设置思考等级(pi set_thinking_level) */
+	"session.setThinkingLevel": {
+		params: { sessionId: string; level: string };
+		response: { ok: true; level: string } | { ok: false; error: string };
+	};
+	/** 当前模型支持的思考等级 */
+	"session.getThinkingLevels": {
+		params: { sessionId: string };
+		response: { ok: true; levels: string[] } | { ok: false; error: string };
+	};
+	/** 会话权限模式:auto = 自动执行;confirm = 每条 bash 命令先经用户确认(guard 扩展) */
+	"session.setPermissionMode": {
+		params: { sessionId: string; mode: "auto" | "confirm" };
+		response: { ok: true } | { ok: false; error: string };
+	};
+	/** 系统文件选择器(单文件;发送附件用) */
+	"project.pickFile": {
+		params: {};
+		response: { ok: true; file: string | null } | { ok: false; error: string };
+	};
+	/** 读绝对路径文本文件(附件内联;上限 256KB,超出截断) */
+	"fs.readAbsolute": {
+		params: { path: string };
+		response: { ok: true; content: string; size: number; truncated: boolean } | { ok: false; error: string };
+	};
 	/**
 	 * pi 模型目录(get_available_models;宿主缓存,refresh 强制重拉 —— 拉起临时
 	 * pi --no-session 进程,约 1-3s)。目录来自用户 ~/.pi 的模型配置。

@@ -33,11 +33,33 @@ function loadAllowList() {
 	}
 }
 
+/** 权限模式(auto|confirm;session.setPermissionMode 写入,每次调用读盘) */
+function loadMode(): "auto" | "confirm" {
+	try {
+		const raw = readFileSync(`${process.cwd()}/.jide/guard-mode.json`, "utf8");
+		return JSON.parse(raw)?.mode === "confirm" ? "confirm" : "auto";
+	} catch {
+		return "auto";
+	}
+}
+
 export default function (pi) {
-	pi.on("tool_call", async (event) => {
+	pi.on("tool_call", async (event, ctx) => {
 		if (event.tool !== "bash" && event.toolName !== "bash") return;
 		const cmd = String(event.args?.command ?? event.args?.cmd ?? "");
 		if (!cmd) return;
+
+		// 权限模式 confirm:每条 bash 命令先经用户确认(RPC 下 ctx.ui.confirm → 宿主 UI 卡片)
+		if (loadMode() === "confirm") {
+			const allowed = await ctx?.ui?.confirm?.("JIDE 权限确认", `允许执行命令?\n${cmd.slice(0, 500)}`);
+			if (!allowed) {
+				return {
+					block: true,
+					reason: "用户拒绝了该命令(权限模式:执行前确认)。请向用户说明意图后再试,或改用其他方案。",
+				};
+			}
+		}
+
 		const hit = DANGEROUS_PATTERNS.find((p) => p.re.test(cmd));
 		if (!hit) return;
 		for (const a of loadAllowList()) {

@@ -11,7 +11,7 @@
 
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { BrowserView, BrowserWindow, Updater } from "electrobun/main";
 import { openFileDialog } from "electrobun/main/utils";
 import type { RPCSchema } from "electrobun/main";
@@ -215,6 +215,9 @@ const DAEMON_METHODS = [
 	"session.get",
 	"session.respondUI",
 	"session.setModel",
+	"session.setThinkingLevel",
+	"session.getThinkingLevels",
+	"session.setPermissionMode",
 	"session.askWithContext",
 	"settings.get",
 	"settings.set",
@@ -322,6 +325,32 @@ const rpc = BrowserView.defineRPC<JideRPC>({
 						allowsMultipleSelection: false,
 					});
 					return { ok: true, folder: paths[0] ?? null };
+				} catch (err: any) {
+					return { ok: false, error: String(err?.message ?? err) };
+				}
+			},
+			"project.pickFile": async () => {
+				try {
+					const paths = await openFileDialog({
+						startingFolder: homedir(),
+						allowedFileTypes: "*",
+						canChooseFiles: true,
+						canChooseDirectory: false,
+						allowsMultipleSelection: false,
+					});
+					return { ok: true, file: paths[0] ?? null };
+				} catch (err: any) {
+					return { ok: false, error: String(err?.message ?? err) };
+				}
+			},
+			"fs.readAbsolute": ({ path }: any) => {
+				try {
+					// 附件内联:用户经系统对话框显式选择的文件;文本读取,256KB 截断
+					const stat = statSync(path);
+					if (stat.size > 4 * 1024 * 1024) return { ok: false, error: "文件超过 4MB,不宜作为附件内联(可改为在消息中引用路径让 agent 自行读取)" };
+					const buf = readFileSync(path);
+					const capped = buf.subarray(0, 256 * 1024);
+					return { ok: true, content: capped.toString("utf8"), size: stat.size, truncated: stat.size > capped.length };
 				} catch (err: any) {
 					return { ok: false, error: String(err?.message ?? err) };
 				}

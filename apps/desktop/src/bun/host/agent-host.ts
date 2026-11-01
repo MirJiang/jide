@@ -466,6 +466,24 @@ export class AgentHost {
 		return label;
 	}
 
+	/** 设置思考等级(pi set_thinking_level;demo 引擎拒绝) */
+	async setThinkingLevel(sessionId: string, level: string): Promise<unknown> {
+		const entry = this.sessions.get(sessionId);
+		if (!entry) throw new Error(`会话不存在:${sessionId}`);
+		const engine = entry.engine as AgentEngine & { setThinkingLevel?: (level: string) => Promise<unknown> };
+		if (typeof engine.setThinkingLevel !== "function") throw new Error("当前引擎(演示模式)不支持思考等级");
+		return engine.setThinkingLevel(level);
+	}
+
+	/** 当前模型支持的思考等级 */
+	async getThinkingLevels(sessionId: string): Promise<string[]> {
+		const entry = this.sessions.get(sessionId);
+		if (!entry) throw new Error(`会话不存在:${sessionId}`);
+		const engine = entry.engine as AgentEngine & { getThinkingLevels?: () => Promise<string[]> };
+		if (typeof engine.getThinkingLevels !== "function") return [];
+		return engine.getThinkingLevels();
+	}
+
 	/** 销毁并从会话文件重建(恢复历史消息) */
 	async rebuild(sessionId: string) {
 		const entry = this.sessions.get(sessionId);
