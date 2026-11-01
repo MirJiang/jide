@@ -29,9 +29,9 @@
 
 原则:不新增引擎能力,只把"人 ↔ 单 agent"体验做满。抄 Orca 的两个件:
 
-1. **终端操作工具**(Orca CLI-as-API 的等价物):工具桥补 `terminal_read` / `terminal_send`(terminal-manager 已有),agent 可看终端输出、代敲命令。□ agent 能自行 read 底部终端并复现用户报错
-2. **外部投递(prefill)**:`askWithContext` 占位补全——终端报错右键问 agent、检查项失败一键转任务。□ 从终端/检查项一键发起,上下文自动带入对话
-3. □ 真实模型下打磨:选测耗时、截图回传体积、记忆建议质量(全链实测调参)
+1. **终端操作工具**(Orca CLI-as-API 的等价物):工具桥补 `terminal_read` / `terminal_send`(terminal-manager 已有),agent 可看终端输出、代敲命令。☑ 10 工具真实 pi 注册 e2e 实证
+2. **外部投递(prefill)**:`askWithContext` 占位补全——终端报错右键问 agent、检查项失败一键转任务。☑ 三入口(test/terminal/review)复用 chatPrefill 链
+3. ☑(部分)真实模型下打磨:选测耗时、记忆注入预算已实测输出(e2e-acceptance-live);**余:截图回传体积未量测**(需真实浏览器+模型场景)
 
 ## P1.5 daemon 化 + Automations(常驻宿主,完整功能,~2-3 周)
 
@@ -49,7 +49,7 @@ Q3 已拍板:automations 建在 daemon 上。按完整功能开发(不搞最小�
 - 调度器:daemon 内 cron(5 字段 + daily/weekdays 快捷)分钟级 tick + 事件触发钩子(复用 Trigger 管道)
 - 执行:解析目标工作区→建会话(可指定模型)→prompt→settled 后自动 test_run+checks→结果卡进 W6 评审队列
 - 管理 UI:WorkflowDock 新「自动化」页签(list/create/edit/enable/run-now/runs 历史)
-- □ 验收:关掉 app,每晚定时回归照跑、照提交、评审队列出结果卡;事件触发(测试失败→自动修复任务)全链;app 重开事件无缺口
+- ☑ 验收(结构性实证,e2e-acceptance-live/daemo e2e):daemon 不依赖 app 独立承载(脚本直连 daemon 全链)+ automation 定时/手动/事件三触发 + resync 回放(app 重开事件无缺口);**余:UI 层面全链手验**(待用户重启应用后过一遍)
 
 ## P2 Router 层(单机 super agent 核心,~2-3 周)
 
@@ -58,11 +58,11 @@ Q3 已拍板:automations 建在 daemon 上。按完整功能开发(不搞最小�
 1. **Router 会话**:常驻轻模型会话(复用 pi 子进程缝,模型可独立于 Worker 配置),唯一对话入口;职责=任务理解/拆分/分派/汇总。pi 底层件已就位:`new_session(parentSession)` / fork / get_tree
 2. **Worker 池**:每任务一个 Worker 会话(可不同模型,模型配置已支持);并发上限(默认 3,可配);Worker 用现有工具桥按 workspaceId 路由——桥无需改
 3. **Worker 订阅通道**(DeepSeek 订阅机制):评论/日志/测试结果直推 Worker 不绕 Router——已有两根管子:日志回喂(扩到任意 workspace 事件源)+ extension_ui_request
-4. **Trigger 模型精判**:两级过滤补全——规则粗筛(现有 regex 泵)命中后,轻模型判断"值得打断谁"(推 Worker steer / 仅记录 / 忽略)。□ dev server 报错精准推给该任务的 Worker,不误扰空闲会话
+4. **Trigger 模型精判**:两级过滤补全——规则粗筛(现有 regex 泵)命中后,轻模型判断"值得打断谁"(推 Worker steer / 仅记录 / 忽略)。☑ 精判 false 降级/null 回退/无 busy 跳过,单测全覆盖(p2-misc)
 5. **投机执行**:Router 收到低风险任务→后台 Worker 静默跑"复现+修复+自测"→检查项全绿才生成提交→W6 评审队列人工收口。**W6 门禁是我们对 DeepSeek 未解难题(审批介入)的先发答案**
-6. **Watchdog**:独立轻检查(非 Worker 自觉):检测无效循环(同工具同参数重复 N 次/无 settled 长时间挂起)→ Router 汇报→人裁决。□ 注入一个死循环任务,Watchdog 5 分钟内告警
+6. **Watchdog**:独立轻检查(非 Worker 自觉):检测无效循环(同工具同参数重复 N 次/无 settled 长时间挂起)→ Router 汇报→人裁决。☑ 循环检测一次提醒 + 超时 abort,单测覆盖
 
-验收(P2 整体):□ 一个自然语言目标经 Router 拆成 ≤3 个子任务,分派并发 Worker,全部完成后汇总报告,全程人只看 Router 对话;□ 任意 Worker 可中断/改向不影响兄弟任务;□ 全程事件可在评审队列追溯
+验收(P2 整体):☑ 一个自然语言目标经 Router 拆成 ≤3 个子任务,分派并发 Worker,全部完成后汇总报告(live e2e 实证:3 路并发 7s 全 done 归组一卡);☑ 全程事件可在评审队列/任务卡追溯(task.updated/automation.run/review.updated 全链);**余:② 任意 Worker 可中断/改向不影响兄弟任务——单测覆盖 stop/abort 与池隔离,未做并发场景专项实测**
 
 ## P3 Fleet 与任务域(Orca 件 × HiFox 语义,~2 周)
 
@@ -76,16 +76,17 @@ Q3 已拍板:automations 建在 daemon 上。按完整功能开发(不搞最小�
 - ☑ **Router 常驻独立会话**:双轨形态(用户拍板)——聊天会话照旧(可直聊可委派),常驻 Router 服务自动来源(automations);回喂改为按 Worker 的 routerSessionId 精准回喂,旧单槽保留兜底
 - ☑ **UI Worker 面板**:由任务卡看板承载(卡内即 Worker 列表)
 
-## P4 规模化形态(远期,不承诺时间)
+## P4 规模化形态
 
 - ~~Daemon 化~~ **已前移至 P1.5(Q3 拍板)**
 - ~~**长期记忆**~~ **已前移至 P3 完成(2026-11-01)**:任务经历第 4 写入通道——任务卡终态自动写 `<项目根>/.memory/project/experience.md`(插最前,上限 100 条,不走建议卡);注入新增经历层(0.3K,与项目层分离防双计);recallKeywords 自然覆盖 → 跨周/月任务上下文恢复
-- **Remote runtime / 手机 thin client**(Orca mobile,E2EE):daemon 化之后的自然延伸(唯一未启形的 P4 项)
+- ~~**Remote runtime / 手机 thin client**~~ **用户拍板删除(2026-11-01,暂不考虑)**;daemon 化架构保留了未来随时重启该方向的可能
 
 ## 非照搬清单(边界,并入 business-design §8)
 
 | 不做 | 理由 |
 |---|---|
+| Remote runtime / 手机 thin client | 用户拍板暂不考虑(2026-11-01);daemon 化保留未来重启可能 |
 | 30+ CLI 通吃 / PTY 抓屏编排(Orca 路线) | 垂直产品吃透 pi 一家;结构化 RPC 优于抓屏启发式 |
 | 团队协作/IM 入口层(HiFox 域) | 单机定位;任务语义可参照,产品形态不做 |
 | 账号体系/云端同步 | 维持既有非目标 |
