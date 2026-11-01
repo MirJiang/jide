@@ -40,6 +40,8 @@ export interface SessionEntry {
 	workspaceId?: string;
 	/** 会话启动模型(--model provider/id);缺省 = pi 自己的默认 */
 	model?: { provider: string; modelId: string };
+	/** 编排模式(P2):注入 jide-orchestrator 扩展(委派工具),会话即 Router */
+	orchestrator?: boolean;
 	status: SessionStatus;
 	unsubscribe: () => void;
 }
@@ -54,6 +56,8 @@ export interface CreateSessionOptions {
 	workspaceId?: string;
 	/** 新会话模型(settings.defaultModel 解析后传入);空 = pi 默认 */
 	model?: { provider: string; modelId: string };
+	/** 编排模式(P2):注入 jide-orchestrator 扩展(委派工具),会话即 Router */
+	orchestrator?: boolean;
 	/**
 	 * 兼容保留:真实模式下工作区 AGENTS.md 由 pi 原生发现加载(自己的 pi 自己读)。
 	 */
@@ -153,8 +157,8 @@ export class AgentHost {
 		return null;
 	}
 
-	/** 组装 pi 子进程的扩展参数(-e 门禁/记忆扩展;绑定了桥再带上工具桥扩展) */
-	private piExtensionArgs(): string[] {
+	/** 组装 pi 子进程的扩展参数(-e 门禁/记忆扩展;绑定了桥再带工具桥;编排会话再加委派工具) */
+	private piExtensionArgs(orchestrator?: boolean): string[] {
 		const extDir = this.extensionsDir();
 		if (!extDir) {
 			this.log("warn", "未找到 JIDE 扩展目录:危险命令门禁、记忆注入与工具桥不可用");
@@ -162,6 +166,7 @@ export class AgentHost {
 		}
 		const args = ["-e", join(extDir, "jide-guard.ts"), "-e", join(extDir, "jide-memory.ts")];
 		if (this.bridge) args.push("-e", join(extDir, "jide-tools.ts"));
+		if (orchestrator && this.bridge) args.push("-e", join(extDir, "jide-orchestrator.ts"));
 		return args;
 	}
 
@@ -294,11 +299,12 @@ export class AgentHost {
 		sessionFile?: string;
 		workspaceId?: string;
 		model?: { provider: string; modelId: string };
+		orchestrator?: boolean;
 	}): Promise<AgentEngine> {
 		if (opts.demo) {
 			return new DemoEngine({ cwd: opts.cwd, sessionDir: opts.dir, sessionFile: opts.sessionFile });
 		}
-		const args = this.piExtensionArgs();
+		const args = this.piExtensionArgs(opts.orchestrator);
 		const memoryFile = this.writeMemoryFile(opts.dir, opts.memoryContext);
 		return PiSession.create({
 			cwd: opts.cwd,
@@ -307,6 +313,7 @@ export class AgentHost {
 			model: opts.model,
 			env: {
 				...(memoryFile ? { JIDE_MEMORY_FILE: memoryFile } : {}),
+				...(opts.orchestrator ? { JIDE_ORCH: "1" } : {}),
 				...this.bridgeEnv(opts.workspaceId),
 			},
 			sessionFile: opts.sessionFile,
@@ -325,6 +332,7 @@ export class AgentHost {
 			memoryContext: opts.memoryContext,
 			workspaceId: opts.workspaceId,
 			model: opts.model,
+			orchestrator: opts.orchestrator,
 		});
 
 		const entry: SessionEntry = {
@@ -337,6 +345,7 @@ export class AgentHost {
 			memoryContext: opts.memoryContext,
 			workspaceId: opts.workspaceId,
 			model: opts.model,
+			orchestrator: opts.orchestrator,
 			status: "idle",
 			unsubscribe: () => {},
 		};
@@ -386,6 +395,13 @@ export class AgentHost {
 		if (!entry) throw new Error(`会话不存在:${sessionId}`);
 		this.setStatus(entry, "aborted", "用户中断");
 		await entry.engine.abort();
+	}
+
+	/** 定向给某会话插队(pi steer;忙闲语义由调用方把握) */
+	async steerSession(sessionId: string, text: string) {
+		const entry = this.sessions.get(sessionId);
+		if (!entry) throw new Error(`会话不存在:${sessionId}`);
+		await entry.engine.steer(text);
 	}
 
 	/**
@@ -462,6 +478,7 @@ export class AgentHost {
 			sessionFile: sessionFilePath || undefined,
 			workspaceId,
 			model,
+			orchestrator: entry.orchestrator,
 		});
 
 		const next: SessionEntry = {
@@ -474,6 +491,7 @@ export class AgentHost {
 			memoryContext,
 			workspaceId,
 			model,
+			orchestrator: entry.orchestrator,
 			status: "idle",
 			unsubscribe: () => {},
 		};

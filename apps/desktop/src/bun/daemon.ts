@@ -35,6 +35,9 @@ import { ToolBridgeServer, type BridgeToolResult } from "./host/bridge-server";
 import { DevLogPump } from "./host/dev-log-pump";
 import { ModelCatalog } from "./host/model-catalog";
 import { AutomationManager } from "./host/automation-manager";
+import { OrchestratorManager } from "./host/orchestrator";
+import { EventStore } from "./host/event-store";
+import { applyAutostart, launcherPath } from "./host/autostart";
 import { mapFilesToTests as mapTests } from "./host/test-runner";
 import { HttpProbe, TestRunner } from "./host/test-runner";
 
@@ -301,20 +304,85 @@ bridge.register("git_diff_files", async (workspaceId) => {
 	return brText(paths.length ? paths.join("\n") : "(无变更)");
 });
 
+/* ---- 编排桥处理器(P2:Router 会话的委派工具) ---- */
+bridge.register("spawn_worker", async (workspaceId, p) => {
+	try {
+		if (!p.objective) return brText("参数不足:objective 必填", true);
+		const rec = orchestrator.spawnWorker({
+			objective: p.objective,
+			workspaceId: p.workspaceId || workspaceId,
+			modelKey: p.modelKey,
+			timeoutMin: p.timeoutMin,
+			routerSessionId: p.__router,
+		});
+		return brText(`已委派 Worker ${rec.id}(排队中);用 wait_workers({workerIds:["${rec.id}"]}) 收结果。`);
+	} catch (err: any) {
+		return brText(String(err?.message ?? err), true);
+	}
+});
+bridge.register("wait_workers", async (_wid, p) => {
+	try {
+		const ids: string[] = Array.isArray(p.workerIds) ? p.workerIds : [];
+		const out = await orchestrator.waitWorkers(ids, Math.min(p.timeoutSec ?? 300, 600));
+		if (!out.length) return brText("没有可等待的 Worker");
+		const lines = out.map(
+			(w) =>
+				`${w.id} · ${w.status}${w.durationMs !== undefined ? ` · ${Math.round(w.durationMs / 1000)}s` : ""}${w.summary ? `\n  摘要:${w.summary.slice(0, 400)}` : ""}${w.error ? `\n  错误:${w.error.slice(0, 200)}` : ""}`,
+		);
+		return brText(lines.join("\n"));
+	} catch (err: any) {
+		return brText(String(err?.message ?? err), true);
+	}
+});
+bridge.register("worker_status", async (_wid, p) => {
+	const list = p.workerId ? [orchestrator.get(p.workerId)].filter(Boolean) : orchestrator.list();
+	if (!list.length) return brText("暂无 Worker");
+	return brText(
+		list
+			.map((w: any) => `${w.id} · ${w.status}${w.durationMs !== undefined ? ` · ${Math.round(w.durationMs / 1000)}s` : ""} · 目标:${w.objective.slice(0, 60)}${w.summary ? ` · ${w.summary.slice(0, 120)}` : ""}${w.error ? ` · ${w.error.slice(0, 120)}` : ""}`)
+			.join("\n"),
+	);
+});
+bridge.register("send_to_worker", async (_wid, p) => {
+	try {
+		if (!p.workerId || !p.text) return brText("参数不足:workerId 与 text 必填", true);
+		await orchestrator.sendToWorker(p.workerId, p.text);
+		return brText(`已追加到 Worker ${p.workerId};完成会另行回喂。`);
+	} catch (err: any) {
+		return brText(String(err?.message ?? err), true);
+	}
+});
+bridge.register("stop_worker", async (_wid, p) => {
+	try {
+		if (!p.workerId) return brText("参数不足:workerId 必填", true);
+		await orchestrator.stopWorker(p.workerId);
+		return brText(`Worker ${p.workerId} 已中断。`);
+	} catch (err: any) {
+		return brText(String(err?.message ?? err), true);
+	}
+});
+
 host.bindBridge(bridge);
+
+/* ---- 编排层(P2):当前对话即 Router,委派 Worker 池 ---- */
+const orchestrator = new OrchestratorManager({ host, workspaces });
 
 /* dev server 逐行日志 → 回喂泵(错误检测 + 节流) */
 devservers.onLogLine = (workspaceId, line) => logPump.onLine(workspaceId, line);
 
-/* ==================== 事件出口:journal 分配 seq + WS 广播 + 文件日志 ==================== */
-// 唯一事实源:全部事件(宿主+服务)在此分配单调 seq;resync 回放也以本 journal 为准。
+/* ==================== 事件出口:journal 分配 seq + 落盘 + WS 广播 ==================== */
+// 唯一事实源:全部事件(宿主+服务)在此分配单调 seq;resync 回放以本 journal 为准;
+// EventStore 落盘供 daemon 重启回读近期上下文与调试轨迹。
 
 const clients = new Set<ServerWebSocket>();
 const journal = createEventJournal();
+const eventStore = new EventStore(DAEMON_DIR);
+for (const e of eventStore.load()) journal.append(e); // 重启回读(seq 重编号;跨重启 resync 由快照类 RPC 兜底)
 
 const emit = (raw: HostEvent) => {
 	if (!isHostEventType(raw?.type)) return;
 	const e = journal.append(raw) as HostEvent;
+	eventStore.append(e);
 	const line = JSON.stringify(e);
 	for (const ws of clients) {
 		try {
@@ -326,6 +394,7 @@ const emit = (raw: HostEvent) => {
 	if (e.type === "host.log") log(`[host.${e.level}] ${e.message}`);
 	logPump.handleHostEvent(e);
 	automations.handleHostEvent(e);
+	orchestrator.handleHostEvent(e);
 };
 
 host.bindEmitter(emit);
@@ -338,6 +407,8 @@ devservers.bindEmitter(emit);
 browsers.bindEmitter(emit);
 checks.bindEmitter(emit);
 review.bindEmitter(emit);
+orchestrator.bindEmitter(emit);
+orchestrator.startWatchdog();
 checks.setCwdResolver((workspaceId) => workspaces.locate(workspaceId).cwd);
 
 /* ---- 自动化域(P1.5) ---- */
@@ -378,7 +449,9 @@ const handlers = {
 			const modelKey = settings.get().defaultModel;
 			const { parseModelKey } = await import("@jide/contracts");
 			const model = parseModelKey(modelKey) ?? undefined;
-			const entry = await host.createSession({ workspacePath, memoryContext, workspaceId, model });
+			// 编排模式(P2):编排会话注入 jide-orchestrator 扩展(委派工具),会话即 Router
+			const orchestratorEnabled = settings.get().orchestrator !== false;
+			const entry = await host.createSession({ workspacePath, memoryContext, workspaceId, model, orchestrator: orchestratorEnabled });
 			return { ok: true, sessionId: entry.sessionId, modelLabel: entry.modelLabel };
 		} catch (err: any) {
 			host.log("error", `会话创建失败:${err?.message ?? err}`);
@@ -437,7 +510,22 @@ const handlers = {
 
 	/* ---------- 工作区(W1-W4) ---------- */
 	"settings.get": () => ({ ok: true, settings: settings.get() }),
-	"settings.set": ({ patch }: any) => ({ ok: true, settings: settings.set(patch) }),
+	"settings.set": ({ patch }: any) => {
+		const before = settings.get().autostart;
+		const next = settings.set(patch);
+		// 开机自启副作用:仅当 launcher 真实存在(打包态);源码态 exe 为构建产物,跳过
+		if (patch?.autostart !== undefined && next.autostart !== before) {
+			const appDir = import.meta.dir;
+			const lp = launcherPath(appDir);
+			if (!existsSync(lp)) {
+				log("autostart 跳过:未找到 launcher.exe(源码运行态)");
+			} else {
+				const r = applyAutostart(next.autostart, appDir);
+				if (!r.ok) log(`autostart 写入失败:${r.error ?? ""}`);
+			}
+		}
+		return { ok: true, settings: next };
+	},
 	"credential.list": async () => {
 		try {
 			return { ok: true, names: await creds.listUsers() };
@@ -867,6 +955,11 @@ const handlers = {
 		}
 	},
 	"automations.runs": ({ id }: any) => ({ ok: true, runs: automations.list().runs[id] ?? [] }),
+
+	/* ---------- 编排域(P2) ---------- */
+	"orchestrator.workers": () => {
+		return { ok: true, workers: orchestrator.list() };
+	},
 } satisfies Omit<
 	HostRequestHandlers,
 	"app.hello" | "project.pickFolder" | "preview.open" | "window.minimize" | "window.toggleMaximize" | "window.close"

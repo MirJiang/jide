@@ -110,6 +110,13 @@ expectOk((await rpc("automations.list")).out, "automations.list");
 expectOk((await rpc("automations.runs", { id: saved.automation.id })).out, "automations.runs");
 expectOk((await rpc("automations.delete", { id: saved.automation.id })).out, "automations.delete");
 
+// 编排域(P2):workers 列表 RPC + 事件落盘
+const orch = (await rpc("orchestrator.workers")).out;
+expectOk(orch, "orchestrator.workers");
+if (!Array.isArray(orch.workers)) fail("orchestrator.workers 返回非数组");
+if (!existsSync(join(daemonDir, "events.jsonl"))) fail("事件未落盘(events.jsonl 缺失)");
+console.log(`  orchestrator.workers ✓(0 个)· events.jsonl 已落盘`);
+
 // 鉴权:错 token → 401
 const bad = await fetch(`http://127.0.0.1:${port}/rpc/settings.get`, {
 	method: "POST",

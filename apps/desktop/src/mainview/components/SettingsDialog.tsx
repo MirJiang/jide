@@ -259,6 +259,27 @@ function ModelPage({ onNavigate }: { onNavigate: (c: Category) => void }) {
 				/>
 			</Row>
 
+			<Row label="编排模式" desc="会话获得委派工具(spawn_worker 等):agent 可把子任务拆给 Worker 池并行执行,完成后结果自动回喂;关闭则单会话直驱">
+				<Select
+					value={st.orchestrator ? "1" : "0"}
+					options={[
+						["1", "开启"],
+						["0", "关闭"],
+					]}
+					onChange={(v) => void s.saveSettings({ orchestrator: v === "1" })}
+				/>
+			</Row>
+			<Row label="开机自启" desc="登录 Windows 后自动启动 JIDE(写入注册表 Run 键;仅打包安装态生效,源码运行态自动跳过)">
+				<Select
+					value={st.autostart ? "1" : "0"}
+					options={[
+						["1", "开启"],
+						["0", "关闭"],
+					]}
+					onChange={(v) => void s.saveSettings({ autostart: v === "1" })}
+				/>
+			</Row>
+
 			<div className="mb-2 mt-4 flex items-center justify-between">
 				<span className="text-[10px] font-semibold tracking-wider" style={{ color: "var(--fg-faint)" }}>
 					常用模型({favorites.length})

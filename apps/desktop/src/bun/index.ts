@@ -275,6 +275,7 @@ const DAEMON_METHODS = [
 	"automations.delete",
 	"automations.run",
 	"automations.runs",
+	"orchestrator.workers",
 ] as const;
 
 type DaemonMethod = (typeof DAEMON_METHODS)[number];

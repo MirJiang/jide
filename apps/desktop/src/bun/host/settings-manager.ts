@@ -17,6 +17,8 @@ export const DEFAULT_SETTINGS: JideSettings = {
 	devserver: { port: 5175, probe: "auto", readyPattern: "", command: "" },
 	favoriteModels: [],
 	defaultModel: "",
+	orchestrator: true,
+	autostart: false,
 };
 
 /** 模型 key 数组规整:仅留合法 "<provider>/<modelId>",去重保序 */
@@ -68,6 +70,8 @@ export class SettingsManager {
 			},
 			favoriteModels: normModelKeys(p.favoriteModels ?? base.favoriteModels),
 			defaultModel: normModelKey(p.defaultModel ?? base.defaultModel),
+			orchestrator: p.orchestrator ?? base.orchestrator,
+			autostart: p.autostart ?? base.autostart,
 		};
 	}
 

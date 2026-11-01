@@ -45,6 +45,10 @@ export interface JideSettings {
 	favoriteModels: string[];
 	/** 新会话默认模型 key("<provider>/<modelId>");空 = pi 默认(不传 --model) */
 	defaultModel: string;
+	/** 编排模式(P2):会话获得委派工具(spawn_worker 等),可拆子任务给 Worker 池;默认开 */
+	orchestrator: boolean;
+	/** 开机自启(Windows 注册表 Run 键;dev 态指向 build2 launcher) */
+	autostart: boolean;
 }
 
 /** pi 模型目录条目(get_available_models 投影;key = "<provider>/<modelId>") */
@@ -123,6 +127,19 @@ export interface AutomationStore {
 	automations: Automation[];
 	/** automationId → 最近 50 条运行记录 */
 	runs: Record<string, AutomationRun[]>;
+}
+
+/** 编排 Worker 视图(P2;daemon 运行期实体,会话文件另存其历史) */
+export interface WorkerRecordView {
+	id: string;
+	sessionId: string;
+	workspaceId: string;
+	objective: string;
+	status: "queued" | "running" | "done" | "failed" | "timeout" | "aborted";
+	startedAt: number;
+	durationMs?: number;
+	summary?: string;
+	error?: string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -222,6 +239,11 @@ export interface HostRequestShapes {
 	"automations.delete": {
 		params: { id: string };
 		response: { ok: true } | { ok: false; error: string };
+	};
+	/** 编排 Worker 列表(P2;UI 呈现与 e2e 断言用) */
+	"orchestrator.workers": {
+		params: {};
+		response: { ok: true; workers: WorkerRecordView[] } | { ok: false; error: string };
 	};
 	/** 立即手动运行(排队;运行记录经 automation.run 事件实时回推) */
 	"automations.run": {
