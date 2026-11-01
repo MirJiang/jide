@@ -116,18 +116,25 @@ async function ensureDaemon(): Promise<void> {
 	rmSync(portFile, { force: true });
 	rmSync(tokenFile, { force: true });
 	const appDir = join(import.meta.dir, "..");
-	// 解析顺序:显式 env → 打包态 compiled exe → 打包态 cottontail + daemon bundle(标准路径)→ 源码态 bun 直跑
+	// 解析顺序:显式 env → dev 源码态(不锁 build2,重建不受阻)→ 打包态 exe → 打包态 cottontail + bundle。
+	// 注意:daemon 若从 build2 内的 exe 跑,运行中的 exe 会锁死 build2,hutch 重建即 AccessDenied —— dev 必须走源码。
 	const compiled = join(appDir, "jide-daemon.exe");
 	const bundled = join(appDir, "jide-daemon.js");
 	const cottontail = join(appDir, "..", "..", "bin", "cottontail.exe");
+	const devEntry = join(appDir, "..", "..", "..", "..", "..", "src", "bun", "daemon.ts");
+	const devCwd = join(appDir, "..", "..", "..", "..", "..");
 	let cmd: string[];
+	let cwd = appDir;
 	if (process.env.JIDE_DAEMON_BIN) cmd = [process.env.JIDE_DAEMON_BIN];
-	else if (existsSync(compiled)) cmd = [compiled];
+	else if (existsSync(devEntry)) {
+		cmd = [process.env.JIDE_DAEMON_BUN ?? "bun", devEntry];
+		cwd = devCwd;
+	} else if (existsSync(compiled)) cmd = [compiled];
 	else if (existsSync(bundled) && existsSync(cottontail)) cmd = [cottontail, bundled];
 	else cmd = [process.env.JIDE_DAEMON_BUN ?? "bun", join(import.meta.dir, "daemon.ts")];
 	log(`启动 daemon:${cmd.join(" ")}`);
 	Bun.spawn(cmd, {
-		cwd: appDir,
+		cwd,
 		stdin: "ignore",
 		stdout: "ignore",
 		stderr: "ignore",
