@@ -35,6 +35,8 @@ const POLL_INTERVAL_MS = 400;
 export class DevServerManager {
 	private servers = new Map<string, DevServerEntry>();
 	private emit: EmitFn = () => {};
+	/** 逐行日志回调(日志回喂泵订阅;appendLog 同步上下文,回调须快、勿阻塞) */
+	onLogLine: ((workspaceId: string, line: string) => void) | null = null;
 
 	bindEmitter(emit: EmitFn) {
 		this.emit = emit;
@@ -60,7 +62,14 @@ export class DevServerManager {
 
 	private appendLog(entry: DevServerEntry, chunk: string) {
 		for (const line of chunk.split(/\r?\n/)) {
-			if (line.trim()) entry.logTail.push(line);
+			if (line.trim()) {
+				entry.logTail.push(line);
+				try {
+					this.onLogLine?.(entry.workspaceId, line);
+				} catch {
+					// 回调异常不影响日志收集
+				}
+			}
 		}
 		if (entry.logTail.length > 200) entry.logTail.splice(0, entry.logTail.length - 200);
 	}

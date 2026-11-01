@@ -180,6 +180,24 @@ export class WorkspaceManager {
 		return (this.workspacesCache.get(projectId) ?? []).find((w) => w.id === workspaceId);
 	}
 
+	/** 反查:路径 → {projectId, workspaceId}(会话创建时给工具桥路由用;worktree 路径已在缓存则直接命中) */
+	async findByPath(path: string): Promise<{ projectId: string; workspaceId: string } | null> {
+		const norm = path.replace(/[\\/]+$/, "").toLowerCase();
+		for (const rec of Object.values(this.store.projects)) {
+			for (const w of this.workspacesCache.get(rec.id) ?? []) {
+				if (w.path.replace(/[\\/]+$/, "").toLowerCase() === norm) {
+					return { projectId: rec.id, workspaceId: w.id };
+				}
+			}
+			for (const w of await this.listWorkspaces(rec.id)) {
+				if (w.path.replace(/[\\/]+$/, "").toLowerCase() === norm) {
+					return { projectId: rec.id, workspaceId: w.id };
+				}
+			}
+		}
+		return null;
+	}
+
 	/** W3:创建隔离工作区(git worktree add)。仅已信任项目。 */
 	async createWorktree(projectId: string, name: string, fromRef?: string) {
 		const rec = this.store.projects[projectId];

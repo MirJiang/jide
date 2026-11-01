@@ -16,13 +16,29 @@ export interface TerminalEntry {
 	proc: Process;
 	writer: WritableStreamDefaultWriter<Uint8Array> | null;
 	nextId: number;
+	/** 输出环形缓冲(剥 ANSI 后的完整行,尾部 500 行;供 terminal_read 工具读屏) */
+	buf: string[];
+	/** 未凑满一行的剩余片段 */
+	pending: string;
 }
 
 let nextTerminal = 1;
 
+const MAX_TERM_BUF_LINES = 500;
+
+/** 剥 ANSI 转义(CSI/OSC)与回车,便于模型阅读 */
+const ANSI_RE = /\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[=>]/g;
+const stripAnsi = (s: string) => s.replace(ANSI_RE, "").replace(/\r/g, "");
+
 export class TerminalManager {
 	private terminals = new Map<string, TerminalEntry>();
 	private emit: EmitFn = () => {};
+	/** 设置驱动的 shell 选择("cmd" | "powershell" | "pwsh");找不到可执行时回退 cmd */
+	private getShell: () => "cmd" | "powershell" | "pwsh" = () => "cmd";
+
+	constructor(getShell?: () => "cmd" | "powershell" | "pwsh") {
+		if (getShell) this.getShell = getShell;
+	}
 
 	bindEmitter(emit: EmitFn) {
 		this.emit = emit;
@@ -32,27 +48,74 @@ export class TerminalManager {
 		return [...this.terminals.values()].filter((t) => t.workspaceId === workspaceId);
 	}
 
+	/** 工作区最新一个终端(Map 保持插入序;无则 null) */
+	latestForWorkspace(workspaceId: string): TerminalEntry | null {
+		const list = this.listByWorkspace(workspaceId);
+		return list.length ? list[list.length - 1] : null;
+	}
+
+	/** 尾部读取(terminal_read 工具;ANSI 已剥离;最后一行可能未收尾) */
+	tail(id: string, lines = 40): { ok: true; lines: string[] } | { ok: false; error: string } {
+		const e = this.terminals.get(id);
+		if (!e) return { ok: false as const, error: "终端不存在或已退出" };
+		const n = Math.max(1, Math.min(lines, MAX_TERM_BUF_LINES));
+		const out = e.buf.slice(-n);
+		if (e.pending.trim()) out.push(`${e.pending} …(未收尾)`);
+		return { ok: true as const, lines: out };
+	}
+
+	private appendChunk(entry: TerminalEntry, chunk: string) {
+		entry.pending += chunk;
+		let idx: number;
+		while ((idx = entry.pending.indexOf("\n")) >= 0) {
+			const line = stripAnsi(entry.pending.slice(0, idx));
+			entry.pending = entry.pending.slice(idx + 1);
+			if (line.trim()) {
+				entry.buf.push(line);
+				if (entry.buf.length > MAX_TERM_BUF_LINES) entry.buf.splice(0, entry.buf.length - MAX_TERM_BUF_LINES);
+			}
+		}
+	}
+
+	private resolveShell(): string {
+		switch (this.getShell()) {
+			case "powershell":
+				return "powershell.exe";
+			case "pwsh":
+				return "pwsh.exe";
+			default:
+				return process.env.COMSPEC ?? "cmd.exe";
+		}
+	}
+
 	create(workspaceId: string, cwd?: string): TerminalEntry {
 		const id = `term-${nextTerminal++}`;
-		// shell 选择:优先 powershell(错误着色更好),回退 cmd
-		const shell = process.env.COMSPEC ?? "cmd.exe";
-		const proc = Bun.spawn([shell], {
+		// shell 由设置决定(pwsh 未装等 spawn 失败时回退 cmd)
+		const spawnOpts = {
 			cwd: cwd ?? process.cwd(),
-			stdin: "pipe",
-			stdout: "pipe",
-			stderr: "pipe",
+			stdin: "pipe" as const,
+			stdout: "pipe" as const,
+			stderr: "pipe" as const,
 			env: {
 				...process.env,
 				TERM: "xterm-256color",
 				PROMPT: "$P$G",
 			},
-		});
+		};
+		let proc: Process;
+		try {
+			proc = Bun.spawn([this.resolveShell()], spawnOpts);
+		} catch {
+			proc = Bun.spawn([process.env.COMSPEC ?? "cmd.exe"], spawnOpts);
+		}
 		const entry: TerminalEntry = {
 			id,
 			workspaceId,
 			proc,
 			writer: null,
 			nextId: 0,
+			buf: [],
+			pending: "",
 		};
 		this.terminals.set(id, entry);
 
@@ -66,6 +129,7 @@ export class TerminalManager {
 					if (done) break;
 					// 输出转 xterm 转义序列:err 行染红由前端按行缓冲判断,这里原样透传
 					this.emit({ type: "terminal.output", terminalId: id, data: value });
+					this.appendChunk(entry, value);
 					if (isErr) {
 						this.emit({
 							type: "host.log",

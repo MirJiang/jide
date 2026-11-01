@@ -9,6 +9,7 @@
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { BrowserView, BrowserWindow, Updater } from "electrobun/main";
+import { openFileDialog } from "electrobun/main/utils";
 import type { RPCSchema } from "electrobun/main";
 import type {
 	HostRequestShapes,
@@ -26,19 +27,20 @@ import { BrowserAutomation } from "./host/browser-automation";
 import { ChecksManager } from "./host/checks-manager";
 import { ReviewQueue } from "./host/review-queue";
 import { MemoryManager } from "./host/memory-manager";
-import { buildJideTools } from "./host/agent-tools";
+import { SettingsManager } from "./host/settings-manager";
 import { CredentialStore } from "./host/credential-store";
-import { createGuardExtension } from "./host/guard-extension";
+import { ToolBridgeServer, type BridgeToolResult } from "./host/bridge-server";
+import { DevLogPump } from "./host/dev-log-pump";
+import { ModelCatalog } from "./host/model-catalog";
+import { AutomationManager } from "./host/automation-manager";
+import { parseModelKey } from "@jide/contracts";
 import { mapFilesToTests as mapTests } from "./host/test-runner";
-import { HttpProbe, TestRunner, mapFilesToTests } from "./host/test-runner";
+import { HttpProbe, TestRunner } from "./host/test-runner";
 import { copyFileSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { join as pathJoin } from "node:path";
 
 const DEV_SERVER_PORT = 5173;
 const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
-
-/** M1:demo 模式默认开(faux 全链路本地演练);真实模型接入后改为可配置 */
-const DEMO_DEFAULT = process.env.JIDE_DEMO !== "0";
 
 /** 运行时数据(信任状态/会话文件)固定在用户目录,不随 build 目录重建丢失 */
 const RUNTIME_ROOT = process.env.JIDE_HOME ?? join(homedir(), ".jide");
@@ -82,9 +84,12 @@ type JideRPC = {
 };
 
 const host = new AgentHost();
+/* 日志回喂泵("AI 实时看日志"):dev server 错误 → steer 插队运行中会话;须在 emit 定义前创建 */
+const logPump = new DevLogPump(host);
 const workspaces = new WorkspaceManager(RUNTIME_ROOT);
 const files = new FileService(workspaces);
-const terminals = new TerminalManager();
+const settings = new SettingsManager(RUNTIME_ROOT);
+const terminals = new TerminalManager(() => settings.get().terminalShell);
 const devservers = new DevServerManager();
 const browsers = new BrowserAutomation(RUNTIME_ROOT);
 const checks = new ChecksManager(browsers);
@@ -92,37 +97,8 @@ const runner = new TestRunner();
 const review = new ReviewQueue(workspaces, RUNTIME_ROOT);
 const memories = new Map<string, MemoryManager>();
 const creds = new CredentialStore();
-
-const toolContextFor = (workspaceId: string, cwd: string) => ({
-	workspaceId,
-	cwd,
-	devserver,
-	probe: HttpProbe.run,
-	testRunner: runner,
-	scanTests: (c: string) => scanTestFiles(c),
-	changedFiles: async (wid: string) => {
-		const st = await workspaces.gitStatus(wid);
-		return st.ok ? st.changes.map((c) => c.path) : [];
-	},
-	browsers: {
-		navigate: browsers.navigate.bind(browsers),
-		click: browsers.click.bind(browsers),
-		fill: browsers.fill.bind(browsers),
-		capture: browsers.capture.bind(browsers),
-		hover: browsers.hover.bind(browsers),
-		scroll: browsers.scroll.bind(browsers),
-		snapshot: browsers.snapshot.bind(browsers),
-		console: (wid: string, limit?: number) => browsers.consoleMessages(wid, limit),
-		record: browsers.record.bind(browsers),
-	},
-	checks,
-	plans: {
-		create: (wid: string, goal: string, steps: string[]) => plans.create(wid, goal, steps).id,
-		stepDone: (planId: string, i: number) => plans.stepDone(planId, i),
-		current: (wid: string) => plans.getByWorkspace(wid)?.id,
-	},
-	memory: (memoryFor(workspaceId) ?? new MemoryManager(cwd)),
-});
+/** pi 模型目录缓存(get_available_models;临时 pi 进程查询) */
+const modelCatalog = new ModelCatalog();
 
 const memoryFor = (workspaceId: string): MemoryManager | null => {
 	const { cwd } = workspaces.locate(workspaceId);
@@ -137,12 +113,30 @@ const memoryFor = (workspaceId: string): MemoryManager | null => {
 };
 const plans = new PlanManager(workspaces, RUNTIME_ROOT);
 
+/* ---------- 自动化域(P1.5):定时/事件驱动 → 会话 → 自动验证 → 评审队列 ---------- */
+const automations = new AutomationManager({
+	host,
+	workspaces,
+	runtimeRoot: RUNTIME_ROOT,
+	verify: {
+		scanTests: scanTestFiles,
+		gitStatus: (workspaceId) => workspaces.gitStatus(workspaceId),
+		mapTests: mapTests,
+		runTests: (cwd, files, total) => runner.run(cwd, files, total),
+		runChecks: (workspaceId) => checks.run(workspaceId),
+		enqueueChecks: (workspaceId, passed, total) => review.enqueueChecks(workspaceId, passed, total),
+	},
+});
+
 const emit = (e: HostEvent) => {
 	if (!isHostEvent(e)) return;
 	(mainWindow.webview.rpc as any)?.send?.event(e);
 	if (e.type === "host.log") console.log(`[jide:host] ${e.level} ${e.message}`);
+	logPump.handleHostEvent(e);
+	automations.handleHostEvent(e);
 };
 host.bindEmitter(emit);
+logPump.bindEmitter(emit);
 workspaces.bindEmitter(emit);
 terminals.bindEmitter(emit);
 plans.bindEmitter(emit);
@@ -151,49 +145,214 @@ devservers.bindEmitter(emit);
 browsers.bindEmitter(emit);
 checks.bindEmitter(emit);
 review.bindEmitter(emit);
+automations.bindEmitter(emit);
+automations.start();
 checks.setCwdResolver((workspaceId) => workspaces.locate(workspaceId).cwd);
 
-function scanTestFiles(cwd: string): string[] {
-	const out: string[] = [];
-	const walk = (dir: string, rel: string, depth: number) => {
-		if (depth > 6) return;
-		let entries;
-		try {
-			entries = readdirSync(dir, { withFileTypes: true });
-		} catch {
-			return;
-		}
-		for (const e of entries) {
-			if (e.name === "node_modules" || e.name === ".git" || e.name === "build" || e.name === "dist" || e.name === ".hutch") continue;
-			const relPath = rel ? rel + "/" + e.name : e.name;
-			if (e.isDirectory()) walk(pathJoin(dir, e.name), relPath, depth + 1);
-			else if (/\.(test|spec)\.[tj]sx?$/.test(e.name)) out.push(relPath);
-		}
-	};
-	walk(cwd, "", 0);
-	return out;
-}
+/* ---------- 工具桥:pi 进程内 jide-tools 扩展回环调用宿主服务(§4 工具协议表) ---------- */
+const brText = (t: string, isError?: boolean): BridgeToolResult => ({
+	content: [{ type: "text", text: t }],
+	details: undefined,
+	...(isError ? { isError: true } : {}),
+});
 
-function scanTestFiles(cwd: string): string[] {
-	const out: string[] = [];
-	const walk = (dir: string, rel: string, depth: number) => {
-		if (depth > 6) return;
-		let entries;
-		try {
-			entries = readdirSync(dir, { withFileTypes: true });
-		} catch {
-			return;
+const bridge = new ToolBridgeServer();
+
+bridge.register("dev_server", async (workspaceId, p) => {
+	if (p.action === "stop") {
+		const r = await devservers.stop(workspaceId);
+		return brText(r.ok ? "dev server 已停止" : r.error, !r.ok);
+	}
+	if (p.action === "status") {
+		return brText(JSON.stringify(devservers.status(workspaceId)));
+	}
+	const loc = workspaces.locate(workspaceId);
+	if (!loc.cwd) return brText("工作区不存在", true);
+	const trust = workspaces.requireTrusted(loc.projectId!);
+	if (!trust.ok) return brText(trust.error, true);
+	const r = await devservers.ensure(workspaceId, {
+		command: p.command ?? `bunx vite --port ${p.port ?? 5175}`,
+		cwd: loc.cwd,
+		port: p.port ?? 5175,
+		probe: p.probe ?? "auto",
+	});
+	if (!r.ok) return brText(`启动失败:${r.error}\n日志尾:\n${r.logTail ?? "(空)"}`, true);
+	return brText(`就绪 url=${r.url} probe=${r.probeMode} ${r.startedMs}ms`);
+});
+
+bridge.register("http_probe", async (_wid, p) => {
+	const r = await HttpProbe.run(p.url, {
+		expectStatus: p.expectStatus,
+		contains: p.contains,
+		jsonPath: p.jsonPath,
+		jsonEquals: p.jsonEquals,
+	});
+	if (!r.ok) return brText(`探测失败:${r.error}`, true);
+	return brText(`passed=${r.passed} actual=${r.actual}${r.detail ? ` detail=${r.detail}` : ""}`);
+});
+
+bridge.register("browser", async (workspaceId, p) => {
+	try {
+		switch (p.action) {
+			case "navigate": {
+				if (!p.url) return brText("参数不足:url 必填", true);
+				const r = await browsers.navigate(workspaceId, p.url);
+				return r.ok ? brText(`已打开:${p.url}${r.title ? ` (title=${r.title})` : ""}`) : brText(r.error, true);
+			}
+			case "click": {
+				if (!p.selector) return brText("参数不足:selector 必填", true);
+				const r = await browsers.click(workspaceId, p.selector);
+				return r.ok ? brText(`已点击 ${p.selector}`) : brText(`${r.error}(可稍后重试)`, true);
+			}
+			case "fill": {
+				if (!p.selector) return brText("参数不足:selector 必填", true);
+				const r = await browsers.fill(workspaceId, p.selector, p.value ?? "");
+				return r.ok ? brText(`已填写 ${p.selector}`) : brText(r.error, true);
+			}
+			case "hover": {
+				if (!p.selector) return brText("参数不足:selector 必填", true);
+				const r = await browsers.hover(workspaceId, p.selector);
+				return r.ok ? brText(`已 hover ${p.selector}`) : brText(r.error, true);
+			}
+			case "scroll": {
+				await browsers.scroll(workspaceId, p.x ?? 0, p.y ?? 300, p.selector);
+				return brText("已滚动");
+			}
+			case "snapshot": {
+				const r = await browsers.snapshot(workspaceId);
+				return r.ok ? brText("DOM 快照:\n" + r.outline.slice(0, 2000)) : brText(r.error, true);
+			}
+			case "console": {
+				const msgs = browsers.consoleMessages(workspaceId, 30);
+				return brText(msgs.length ? msgs.join("\n") : "(控制台无输出)");
+			}
+			case "record": {
+				const r = await browsers.record(workspaceId, Math.min(p.ms ?? 5000, 30000), 500);
+				return r.ok ? brText(`录屏 ${r.frames} 帧 → ${r.dir}(replay.html 可回放)`) : brText(r.error, true);
+			}
+			case "capture": {
+				const r = await browsers.capture(workspaceId, "shot");
+				return r.ok
+					? brText(`截图已回传:${r.path}(${Math.round((r.dataBase64.length * 0.75) / 1024)}KB)`)
+					: brText(r.error, true);
+			}
+			default:
+				return brText("参数不足:action 不识别", true);
 		}
-		for (const e of entries) {
-			if (e.name === "node_modules" || e.name === ".git" || e.name === "build" || e.name === "dist" || e.name === ".hutch") continue;
-			const relPath = rel ? rel + "/" + e.name : e.name;
-			if (e.isDirectory()) walk(pathJoin(dir, e.name), relPath, depth + 1);
-			else if (/\.(test|spec)\.[tj]sx?$/.test(e.name)) out.push(relPath);
+	} catch (err: any) {
+		return brText(String(err?.message ?? err), true);
+	}
+});
+
+bridge.register("test_run", async (workspaceId, p) => {
+	const loc = workspaces.locate(workspaceId);
+	if (!loc.cwd) return brText("工作区不存在", true);
+	const trust = workspaces.requireTrusted(loc.projectId!);
+	if (!trust.ok) return brText(trust.error, true);
+	const allTests = scanTestFiles(loc.cwd);
+	const changed: string[] = [];
+	if (p.scope !== "all") {
+		const st = await workspaces.gitStatus(workspaceId);
+		if (st.ok) changed.push(...st.changes.map((c: any) => c.path));
+	}
+	const selected = p.scope === "all" ? allTests : mapTests(changed, allTests);
+	emit({ type: "test.progress", workspaceId, phase: "selecting", selected: selected.length, total: allTests.length, done: 0, passed: 0, failed: 0 });
+	if (!selected.length) {
+		return brText(`选测 0/${allTests.length}(无关联用例);如需回归请 scope=all`);
+	}
+	const r = await runner.run(loc.cwd, selected, allTests.length);
+	const pass = r.results.filter((x: any) => x.status === "pass").length;
+	const fail = r.results.filter((x: any) => x.status === "fail").length;
+	emit({ type: "test.progress", workspaceId, phase: "done", selected: r.selected, total: r.total, done: r.results.length, passed: pass, failed: fail });
+	const lines = r.results.map(
+		(x: any) =>
+			`${x.status === "pass" ? "✓" : x.status === "fail" ? "✗" : "–"} ${x.name} ${x.durationMs}ms${x.message ? "\n    " + String(x.message).slice(0, 300) : ""}`,
+	);
+	return brText(`选测 ${selected.length}/${allTests.length} · 通过 ${pass} · 失败 ${fail} · ${r.durationMs}ms\n${lines.join("\n")}`);
+});
+
+bridge.register("checks", async (workspaceId, p) => {
+	if (p.action === "create") {
+		if (!p.title || !p.assertion) return brText("参数不足:create 需 title 与 assertion", true);
+		const r = checks.create(workspaceId, p.title, p.kind ?? "asset", p.assertion);
+		return r.ok ? brText(`已创建检查项 ${r.id}(${p.title})`) : brText(r.error, true);
+	}
+	const r = await checks.run(workspaceId, p.ids);
+	if (!r.ok) return brText(r.error ?? "检查项运行失败", true);
+	// W6:检查项结果入评审队列(与 UI 路径一致)
+	if (r.results.length) {
+		review.enqueueChecks(workspaceId, r.results.filter((x: any) => x.passed).length, r.results.length);
+	}
+	const lines = r.results.map((x: any) => `${x.passed ? "✓" : "✗"} ${x.title}${x.detail ? " · " + x.detail : ""}`);
+	return brText(`检查项 ${r.results.filter((x: any) => x.passed).length}/${r.results.length} 通过\n${lines.join("\n")}`);
+});
+
+bridge.register("plan", async (workspaceId, p) => {
+	if (p.action === "create") {
+		if (!p.goal || !p.steps) return brText("参数不足:create 需 goal 与 steps", true);
+		const loc = workspaces.locate(workspaceId);
+		if (loc.projectId) {
+			const t = workspaces.requireTrusted(loc.projectId);
+			if (!t.ok) return brText(t.error, true);
 		}
-	};
-	walk(cwd, "", 0);
-	return out;
-}
+		plans.create(workspaceId, p.goal, p.steps);
+		return brText(`计划已建立(${p.steps.length} 步),面板可见;逐步执行后用 step_done 推进`);
+	}
+	if (p.stepIndex === undefined) return brText("参数不足:step_done 需 stepIndex", true);
+	const cur = plans.getByWorkspace(workspaceId);
+	if (!cur) return brText("当前工作区无进行中计划,先 create", true);
+	const r = await plans.stepDone(cur.id, p.stepIndex);
+	return r.ok
+		? brText(`步骤 ${p.stepIndex + 1} 完成${r.commit ? `,自动提交 ${r.commit.sha}` : ""}`)
+		: brText(r.error, true);
+});
+
+bridge.register("memory_suggest", async (workspaceId, p) => {
+	const m = memoryFor(workspaceId);
+	if (!m) return brText("工作区不存在", true);
+	m.suggest(p.scope, p.file, p.lines, p.reason);
+	return brText(`已生成记忆建议卡片(${p.file},${p.lines.length} 条),等待用户采纳`);
+});
+
+bridge.register("git_diff_files", async (workspaceId) => {
+	const st = await workspaces.gitStatus(workspaceId);
+	if (!st.ok) return brText(st.error, true);
+	const paths = st.changes.map((c) => c.path);
+	return brText(paths.length ? paths.join("\n") : "(无变更)");
+});
+
+bridge.register("terminal_read", async (workspaceId, p) => {
+	const list = terminals.listByWorkspace(workspaceId);
+	if (!list.length) {
+		return brText("当前工作区没有终端(用户尚未在底部面板打开);可请用户开一个,或改用 bash 工具执行命令", true);
+	}
+	const id = p.terminalId && list.some((t) => t.id === p.terminalId) ? p.terminalId : list[list.length - 1].id;
+	const r = terminals.tail(id, Math.min(p.lines ?? 40, 500));
+	if (!r.ok) return brText(r.error, true);
+	return brText(`[终端 ${id}] 最近输出(尾部 ${r.lines.length} 行):\n${r.lines.join("\n") || "(暂无输出)"}`);
+});
+
+bridge.register("terminal_send", async (workspaceId, p) => {
+	if (!p.text) return brText("参数不足:text 必填", true);
+	const loc = workspaces.locate(workspaceId);
+	if (loc.projectId) {
+		const t = workspaces.requireTrusted(loc.projectId);
+		if (!t.ok) return brText(t.error, true);
+	}
+	const list = terminals.listByWorkspace(workspaceId);
+	if (!list.length) return brText("当前工作区没有终端;可请用户在底部面板打开一个", true);
+	const id = p.terminalId && list.some((t) => t.id === p.terminalId) ? p.terminalId : list[list.length - 1].id;
+	const r = terminals.write(id, p.text + (p.enter === false ? "" : "\r"));
+	return r.ok
+		? brText(`已发送到终端 ${id}${p.enter === false ? "(未回车)" : ""};稍后用 terminal_read 查看结果`)
+		: brText(r.error, true);
+});
+
+host.bindBridge(bridge);
+
+/* dev server 逐行日志 → 回喂泵(错误检测 + 节流) */
+devservers.onLogLine = (workspaceId, line) => logPump.onLine(workspaceId, line);
+
 
 function scanTestFiles(cwd: string): string[] {
 	const out: string[] = [];
@@ -229,48 +388,39 @@ const rpc = BrowserView.defineRPC<JideRPC>({
 						expectedProtocolVersion: PROTOCOL_VERSION,
 					};
 				}
-				return {
-					ok: true,
-					protocolVersion: PROTOCOL_VERSION,
-					host: HOST_NAME,
-					demo: DEMO_DEFAULT,
-				};
+			return {
+				ok: true,
+				protocolVersion: PROTOCOL_VERSION,
+				host: HOST_NAME,
+			};
 			},
-			"session.create": async ({ workspacePath, demoMode }) => {
+			"session.create": async ({ workspacePath }) => {
 				try {
-					// M4:三级注入(项目层/用户层预算内)+ AGENTS.md(只读)
+					// M4:三级记忆注入(项目层/用户层预算内)→ 宿主写入会话目录,
+					// pi 进程内 jide-memory 扩展经 before_agent_start 注入 systemPrompt。
+					// AGENTS.md 由 pi 原生发现加载;危险命令门禁由 pi 进程内 jide-guard
+					// 扩展拦截(豁免表运行时读 <cwd>/.jide/allow-dangerous.json);
+					// 工具桥:jide-tools 扩展经 ToolBridgeServer 回环调用宿主服务(按 workspaceId 路由)。
 					let memoryContext: string | undefined;
-					let agentsMd: string | null = null;
 					const memByPath = [...memories.entries()].find(([, m]) => (m as any).cwd === workspacePath)?.[1];
 					if (memByPath) {
 						const inj = memByPath.inject([]);
 						memoryContext = inj.text || undefined;
-						agentsMd = memByPath.readAgents();
 					}
-					// 解析 workspaceId → 注入 JIDE 工具(测试域/计划/记忆,agent 可自主调用)
-					const toolWsId = await workspaces.resolveWorkspaceId(workspacePath);
-					const tools = toolWsId ? buildJideTools(toolContextFor(toolWsId, workspacePath)) : undefined;
-					// §7.5 危险命令门禁(项目豁免:.jide/allow-dangerous.json)
-					let allowList: string[] = [];
+					let workspaceId: string | undefined;
 					try {
-						allowList = JSON.parse(readFileSync(join(workspacePath || ".", ".jide", "allow-dangerous.json"), "utf8"));
+						workspaceId = (await workspaces.findByPath(workspacePath))?.workspaceId;
 					} catch {
-						/* 无豁免文件 */
+						/* 反查失败不阻塞会话创建(工具返回明确错误) */
 					}
-					const guard = createGuardExtension(allowList);
-					const entry = await host.createSession({
-						workspacePath,
-						demoMode: demoMode ?? DEMO_DEFAULT,
-						memoryContext,
-						agentsMd,
-						customTools: tools,
-						extensions: [guard],
-					});
+					// 新会话默认模型(settings.defaultModel;空 = pi 默认)
+					const modelKey = settings.get().defaultModel;
+					const model = parseModelKey(modelKey) ?? undefined;
+					const entry = await host.createSession({ workspacePath, memoryContext, workspaceId, model });
 					return {
 						ok: true,
 						sessionId: entry.sessionId,
 						modelLabel: entry.modelLabel,
-						demo: entry.demo,
 					};
 				} catch (err: any) {
 					host.log("error", `会话创建失败:${err?.message ?? err}`);
@@ -310,8 +460,116 @@ const rpc = BrowserView.defineRPC<JideRPC>({
 				if (!snap) return { ok: false, error: `会话不存在:${sessionId}` };
 				return { ok: true, ...snap };
 			},
+			"session.respondUI": ({ sessionId, requestId, value, confirmed, cancelled }) => {
+				try {
+					host.respondUI(sessionId, { requestId, value, confirmed, cancelled });
+					return { ok: true };
+				} catch (err: any) {
+					return { ok: false, error: String(err?.message ?? err) };
+				}
+			},
+			"session.setModel": async ({ sessionId, provider, modelId }) => {
+				try {
+					const modelLabel = await host.setModel(sessionId, provider, modelId);
+					return { ok: true, modelLabel };
+				} catch (err: any) {
+					return { ok: false, error: String(err?.message ?? err) };
+				}
+			},
+			"models.list": async ({ refresh }) => {
+				try {
+					const models = await modelCatalog.list(refresh === true);
+					return { ok: true, models };
+				} catch (err: any) {
+					return { ok: false, error: String(err?.message ?? err) };
+				}
+			},
+
+			/* ---------- 自动化域(P1.5) ---------- */
+			"automations.list": () => {
+				const { automations: list, runs } = automations.list();
+				return { ok: true, automations: list, runs };
+			},
+			"automations.save": ({ automation }) => {
+				try {
+					const saved = automations.save(automation);
+					return { ok: true, automation: saved };
+				} catch (err: any) {
+					return { ok: false, error: String(err?.message ?? err) };
+				}
+			},
+			"automations.delete": ({ id }) => {
+				try {
+					automations.delete(id);
+					return { ok: true };
+				} catch (err: any) {
+					return { ok: false, error: String(err?.message ?? err) };
+				}
+			},
+			"automations.run": async ({ id }) => {
+				try {
+					const rec = await automations.run(id, "manual");
+					return { ok: true, runId: rec.id };
+				} catch (err: any) {
+					return { ok: false, error: String(err?.message ?? err) };
+				}
+			},
+			"automations.runs": ({ id }) => {
+				return { ok: true, runs: automations.list().runs[id] ?? [] };
+			},
 
 			/* ---------- 工作区(W1-W4) ---------- */
+			"settings.get": () => {
+				return { ok: true, settings: settings.get() };
+			},
+			"settings.set": ({ patch }) => {
+				return { ok: true, settings: settings.set(patch) };
+			},
+			"credential.list": async () => {
+				try {
+					return { ok: true, names: await creds.listUsers() };
+				} catch (err: any) {
+					return { ok: false, error: String(err?.message ?? err) };
+				}
+			},
+			"credential.set": async ({ name, secret }) => {
+				const r = await creds.set(name, secret);
+				return r.ok ? { ok: true } : { ok: false, error: r.error ?? "凭据写入失败" };
+			},
+			"credential.delete": async ({ name }) => {
+				await creds.delete(name);
+				return { ok: true };
+			},
+			"project.pickFolder": async () => {
+				try {
+					const paths = await openFileDialog({
+						startingFolder: homedir(),
+						allowedFileTypes: "*",
+						canChooseFiles: false,
+						canChooseDirectory: true,
+						allowsMultipleSelection: false,
+					});
+					return { ok: true, folder: paths[0] ?? null };
+				} catch (err: any) {
+					return { ok: false, error: String(err?.message ?? err) };
+				}
+			},
+			"project.clone": async ({ url, dir }) => {
+				try {
+					const target = dir.replace(/[\\/]+$/, "");
+					if (!/^https?:\/\/|git@|ssh:\/\//.test(url)) return { ok: false, error: "远程地址格式不合法" };
+					const proc = Bun.spawn(["git", "clone", "--progress", url, target], { stdout: "pipe", stderr: "pipe" });
+					const err = await new Response(proc.stderr).text();
+					const code = await proc.exited;
+					if (code !== 0) {
+						const lines = err.trim().split(/\r?\n/).filter(Boolean);
+						return { ok: false, error: lines[lines.length - 1] ?? "克隆失败" };
+					}
+					return { ok: true, folder: target };
+				} catch (err: any) {
+					return { ok: false, error: String(err?.message ?? err) };
+				}
+			},
 			"project.open": async ({ path }) => {
 				const r = await workspaces.openProject(path);
 				if (!r.opened) return { ok: false, error: r.reason };
@@ -756,10 +1014,12 @@ mainWindow.on("close", () => {
 	devservers.stopAll();
 	browsers.disposeAll();
 	host.disposeAll();
+	bridge.stop();
+	automations.dispose();
 });
 
 console.log(
-	`[jide] 主进程就绪 · host=${HOST_NAME} · protocol=v${PROTOCOL_VERSION} · demo=${DEMO_DEFAULT}`,
+	`[jide] 主进程就绪 · host=${HOST_NAME} · protocol=v${PROTOCOL_VERSION}`,
 );
 
 /* E2E 冒烟钩子:JIDE_SMOKE_PLAN=<完整workspaceId> 自动建计划并推进两步(W5 自动提交,日志可断言) */

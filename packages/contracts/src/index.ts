@@ -10,7 +10,7 @@
  */
 
 /** 协议版本。破坏性变更(删改已有字段语义)时 +1,并在 app.hello 协商。 */
-export const PROTOCOL_VERSION = 1 as const;
+export const PROTOCOL_VERSION = 3 as const;
 
 /** 会话运行状态 */
 export type SessionStatus =
@@ -19,6 +19,111 @@ export type SessionStatus =
 	| "aborted" // 被用户中断
 	| "error" // 出错(见 detail)
 	| "disposed"; // 已销毁,等待重建
+
+/** 全局设置(~/.jide/settings.json,宿主持久化;默认值兜底) */
+export interface JideSettings {
+	/** 界面主题:system=跟随系统(默认)/ light=浅色 / dark=深色 */
+	theme: "system" | "light" | "dark";
+	/** 编辑器字号 px */
+	editorFontSize: number;
+	/** 终端字号 px */
+	terminalFontSize: number;
+	/** 终端默认 shell */
+	terminalShell: "cmd" | "powershell" | "pwsh";
+	/** dev server 默认参数(runTier「人侧运行」使用) */
+	devserver: {
+		port: number;
+		probe: "auto" | "http" | "port" | "log";
+		readyPattern: string;
+		/** 空 = 宿主默认(bunx vite --port N) */
+		command: string;
+	};
+	/**
+	 * 常用模型列表(ThinkRail favoriteModels 语义):key = "<provider>/<modelId>",
+	 * 按序展示于对话面板模型选择器;空 = 不限制(用 pi 自己的默认)。
+	 */
+	favoriteModels: string[];
+	/** 新会话默认模型 key("<provider>/<modelId>");空 = pi 默认(不传 --model) */
+	defaultModel: string;
+}
+
+/** pi 模型目录条目(get_available_models 投影;key = "<provider>/<modelId>") */
+export interface PiModelInfo {
+	key: string;
+	provider: string;
+	id: string;
+	name: string;
+	reasoning: boolean;
+	contextWindow?: number;
+	maxTokens?: number;
+}
+
+/** 模型目录 key:"<provider>/<modelId>"(provider 不含 "/") */
+export function modelKey(provider: string, id: string): string {
+	return `${provider}/${id}`;
+}
+
+/** 解析模型 key;非法(缺 provider 或 modelId)返回 null */
+export function parseModelKey(key: string): { provider: string; modelId: string } | null {
+	const i = key.indexOf("/");
+	if (i <= 0 || i === key.length - 1) return null;
+	return { provider: key.slice(0, i), modelId: key.slice(i + 1) };
+}
+
+/* ------------------------------------------------------------------ */
+/* 自动化域(P1.5:定时/事件驱动的挂机任务)                          */
+/* ------------------------------------------------------------------ */
+
+/** 触发器:cron 表达式 / 每日 / 工作日 / 事件驱动 */
+export type AutomationTrigger =
+	| { kind: "cron"; /** 标准 5 字段:分 时 日 月 周(* , - /) */ expr: string }
+	| { kind: "daily"; /** "HH:mm" */ time: string }
+	| { kind: "weekdays"; /** 周一至周五,"HH:mm" */ time: string }
+	| { kind: "event"; /** 事件类型:test 失败 / 检查项失败 */ type: "test-failed" | "checks-failed" };
+
+/** 自动化任务:到点/事件 → 建会话跑 prompt →(可选)自动验证 → 评审队列 */
+export interface Automation {
+	id: string;
+	name: string;
+	enabled: boolean;
+	trigger: AutomationTrigger;
+	/** 发给 agent 的任务描述 */
+	prompt: string;
+	/** 模型 key("<provider>/<modelId>");空 = pi 默认 */
+	modelKey: string;
+	/** 目标:repo = 每次 run 新建隔离 worktree(自动提交+评审);workspace = 指定既有工作区 */
+	target: { kind: "repo"; repoId: string } | { kind: "workspace"; workspaceId: string };
+	/** 复用会话(同一会话连续对话);false = 每 run 新会话 */
+	reuseSession: boolean;
+	/** run 结束后自动 test_run + checks,结果进评审队列 */
+	autoVerify: boolean;
+	/** 单轮超时(分钟,默认 30) */
+	timeoutMin: number;
+	createdAt: number;
+}
+
+export interface AutomationRun {
+	id: string;
+	automationId: string;
+	startedAt: number;
+	durationMs?: number;
+	status: "running" | "queued" | "ok" | "failed" | "timeout" | "aborted";
+	/** 触发来源 */
+	trigger: "manual" | "schedule" | "event";
+	sessionId?: string;
+	/** 摘要:模型回复尾 / 验证结果 */
+	summary?: string;
+	tests?: { selected: number; total: number; passed: number; failed: number };
+	checks?: { total: number; passed: number };
+	error?: string;
+}
+
+/** 解析自动化存储文件(损坏/缺字段回落) */
+export interface AutomationStore {
+	automations: Automation[];
+	/** automationId → 最近 50 条运行记录 */
+	runs: Record<string, AutomationRun[]>;
+}
 
 /* ------------------------------------------------------------------ */
 /* UI → 宿主:请求(全部枚举)                                        */
@@ -29,14 +134,14 @@ export interface HostRequestShapes {
 	"app.hello": {
 		params: { protocolVersion: number };
 		response:
-			| { ok: true; protocolVersion: number; host: string; demo: boolean }
+			| { ok: true; protocolVersion: number; host: string }
 			| { ok: false; error: string; expectedProtocolVersion: number };
 	};
 	/** 创建 agent 会话(一个工作区一个活动会话;M1 单会话) */
 	"session.create": {
-		params: { workspacePath: string; demoMode: boolean };
+		params: { workspacePath: string };
 		response:
-			| { ok: true; sessionId: string; modelLabel: string; demo: boolean }
+			| { ok: true; sessionId: string; modelLabel: string }
 			| { ok: false; error: string };
 	};
 	/** 发送一条用户消息并驱动 agent 主循环 */
@@ -66,13 +171,105 @@ export interface HostRequestShapes {
 					status: SessionStatus;
 					messages: Array<{ role: "user" | "assistant"; text: string }>;
 					modelLabel: string;
-					demo: boolean;
 			  }
 			| { ok: false; error: string };
+	};
+	/**
+	 * 回复 pi 扩展 UI 请求(agent.ui.request 事件;RPC Extension UI 子协议,v3)。
+	 * dialog 类(select/confirm/input/editor)必须回;notify 类无需响应。
+	 */
+	"session.respondUI": {
+		params: {
+			sessionId: string;
+			requestId: string;
+			/** select/input/editor 的取值 */
+			value?: string;
+			/** confirm 的结果 */
+			confirmed?: boolean;
+			/** 任意 dialog 的取消 */
+			cancelled?: boolean;
+		};
+		response: { ok: true } | { ok: false; error: string };
+	};
+	/** 切换活动会话模型(pi set_model,即时生效;返回模型显示名) */
+	"session.setModel": {
+		params: { sessionId: string; provider: string; modelId: string };
+		response: { ok: true; modelLabel: string } | { ok: false; error: string };
+	};
+	/**
+	 * pi 模型目录(get_available_models;宿主缓存,refresh 强制重拉 —— 拉起临时
+	 * pi --no-session 进程,约 1-3s)。目录来自用户 ~/.pi 的模型配置。
+	 */
+	"models.list": {
+		params: { refresh?: boolean };
+		response: { ok: true; models: PiModelInfo[] } | { ok: false; error: string };
+	};
+
+	/* ---------------- 自动化域(P1.5) ---------------- */
+
+	/** 列出自动化任务与运行历史 */
+	"automations.list": {
+		params: {};
+		response:
+			| { ok: true; automations: Automation[]; runs: Record<string, AutomationRun[]> }
+			| { ok: false; error: string };
+	};
+	/** 新建/更新(automation.id 为空 = 新建);返回落库后的完整对象 */
+	"automations.save": {
+		params: { automation: Automation };
+		response: { ok: true; automation: Automation } | { ok: false; error: string };
+	};
+	"automations.delete": {
+		params: { id: string };
+		response: { ok: true } | { ok: false; error: string };
+	};
+	/** 立即手动运行(排队;运行记录经 automation.run 事件实时回推) */
+	"automations.run": {
+		params: { id: string };
+		response: { ok: true; runId: string } | { ok: false; error: string };
+	};
+	"automations.runs": {
+		params: { id: string };
+		response: { ok: true; runs: AutomationRun[] } | { ok: false; error: string };
 	};
 
 	/* ---------------- 工作区域(W1-W4) ---------------- */
 
+	/** 读取全局设置 */
+	"settings.get": {
+		params: {};
+		response: { ok: true; settings: JideSettings } | { ok: false; error: string };
+	};
+	/** 部分更新全局设置(合并写入 settings.json),返回合并后的全量 */
+	"settings.set": {
+		params: { patch: Partial<JideSettings> };
+		response: { ok: true; settings: JideSettings } | { ok: false; error: string };
+	};
+	/** 列出凭据库条目名(仅名称,永不返回值;§7.4 凭据零留存) */
+	"credential.list": {
+		params: {};
+		response: { ok: true; names: string[] } | { ok: false; error: string };
+	};
+	/** 写入凭据(系统凭据库,user 如 provider 名) */
+	"credential.set": {
+		params: { name: string; secret: string };
+		response: { ok: true } | { ok: false; error: string };
+	};
+	/** 删除凭据 */
+	"credential.delete": {
+		params: { name: string };
+		response: { ok: true } | { ok: false; error: string };
+	};
+	/** 系统目录选择对话框(打开项目用);用户取消 → folder:null */
+	"project.pickFolder": {
+		params: {};
+		response: { ok: true; folder: string | null } | { ok: false; error: string };
+	};
+	/** 克隆远程 git 仓库到本地目录(打开远程项目第一步;完成后自行走 project.open) */
+	"project.clone": {
+		params: { url: string; dir: string };
+		response: { ok: true; folder: string } | { ok: false; error: string };
+	};
 	/** 打开/注册项目(信任门前置检查:是否 git 仓库、是否已信任) */
 	"project.open": {
 		params: { path: string };
@@ -555,7 +752,6 @@ export type HostEvent =
 			seq: number;
 			sessionId: string;
 			modelLabel: string;
-			demo: boolean;
 	  }
 	| { type: "session.status"; seq: number; sessionId: string; status: SessionStatus; detail?: string }
 	| { type: "agent.started"; seq: number; sessionId: string }
@@ -647,6 +843,33 @@ export type HostEvent =
 			seq: number;
 			budget: { projectK: number; userK: number; sessionK: number; totalK: number; capK: number; nearLimit: boolean };
 	  }
+	/** 自动化任务列表变更(增删改/启停) */
+	| { type: "automation.updated"; seq: number; automationId: string }
+	/** 自动化运行记录变化(排队/开始/结束;UI 实时刷新运行历史) */
+	| { type: "automation.run"; seq: number; run: AutomationRun }
+	/**
+	 * pi 扩展 UI 请求转发(RPC Extension UI 子协议,v3)。
+	 * dialog 类(select/confirm/input/editor)须以 session.respondUI 回复(带 requestId);
+	 * notify 为火后不管,仅呈现。
+	 */
+	| {
+			type: "agent.ui.request";
+			seq: number;
+			sessionId: string;
+			/** pi 侧请求 id(extension_ui_response 须原样带回) */
+			requestId: string;
+			method: "select" | "confirm" | "input" | "editor" | "notify";
+			title?: string;
+			/** select 的选项列表 */
+			options?: string[];
+			/** confirm 的说明文本 / notify 的内容 */
+			message?: string;
+			/** input 占位符 / editor 预填文本 */
+			prefill?: string;
+			notifyType?: "info" | "warning" | "error";
+			/** pi 侧超时(ms);到期 pi 自动按默认值解决,客户端无须计时 */
+			timeout?: number;
+	  }
 	| { type: "host.log"; seq: number; level: "info" | "warn" | "error"; message: string };
 
 export type HostEventType = HostEvent["type"];
@@ -702,6 +925,9 @@ const EVENT_TYPES: ReadonlySet<string> = new Set<HostEventType>([
 	"preview.request",
 	"memory.suggested",
 	"memory.updated",
+	"agent.ui.request",
+	"automation.updated",
+	"automation.run",
 	"host.log",
 ]);
 

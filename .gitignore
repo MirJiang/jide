@@ -14,3 +14,9 @@ apps/desktop/.hutch/devkit/
 .env.*
 runtime/
 apps/desktop/perf/
+
+# build/artifact dirs
+apps/desktop/build2/
+apps/desktop/.cottontail-tmp/
+.zcode/
+apps/desktop/.hutch/
