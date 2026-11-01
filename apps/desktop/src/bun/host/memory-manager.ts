@@ -26,6 +26,8 @@ export interface MemoryBudget {
 	projectK: number;
 	userK: number;
 	sessionK: number;
+	/** 任务经历层(P4 提前落地) */
+	experienceK: number;
 	totalK: number;
 	capK: number;
 	ratio: number;
@@ -40,8 +42,12 @@ export interface Suggestion {
 	reason: string;
 }
 
-const CAP_K = 2;
-const LAYER_BUDGET_K = { project: 1.2, user: 0.4, session: 0.4 } as const;
+const CAP_K = 2.4;
+const LAYER_BUDGET_K = { project: 1.2, user: 0.4, session: 0.4, experience: 0.3 } as const;
+/** 任务经历文件(项目 scope 内单列一层,不计入项目层) */
+export const EXPERIENCE_FILE = "experience.md";
+/** 任务经历保留上限(条) */
+const EXPERIENCE_CAP = 100;
 const NEAR_LIMIT_RATIO = 0.95;
 
 /** 估算 token:中文 ~2 字符/枚,ASCII ~4 字符/枚,混合取 2.5 */
@@ -129,12 +135,13 @@ export class MemoryManager {
 
 	/* ---------------- 三级注入 ---------------- */
 
-	/** 生成分层注入文本(项目层→用户层→会话层),预算内截断 */
+	/** 生成分层注入文本(项目层→用户层→经历层→用户层→会话层),预算内截断 */
 	inject(sessionNotes: string[] = []): { text: string; budget: MemoryBudget; layers: Record<string, number> } {
 		const parts: string[] = [];
 		let pT = 0;
 		let uT = 0;
 		let sT = 0;
+		let eT = 0;
 
 		const take = (lines: string[], budgetTokens: number): { lines: string[]; used: number } => {
 			const taken: string[] = [];
@@ -148,11 +155,20 @@ export class MemoryManager {
 			return { lines: taken, used };
 		};
 
-		const proj = this.list().filter((e) => e.scope === "project").flatMap((e) => e.lines);
+		// 任务经历单列一层(从项目层排除,防双重计入)
+		const projEntries = this.list().filter((e) => e.scope === "project");
+		const proj = projEntries.filter((e) => e.file !== EXPERIENCE_FILE).flatMap((e) => e.lines);
 		const projTake = take(proj, LAYER_BUDGET_K.project);
 		if (projTake.lines.length) {
 			pT = projTake.used;
 			parts.push(`# 项目记忆(命令/约定/坑)\n` + projTake.lines.map((l) => `- ${l}`).join("\n"));
+		}
+
+		const exp = projEntries.filter((e) => e.file === EXPERIENCE_FILE).flatMap((e) => e.lines);
+		const expTake = take(exp, LAYER_BUDGET_K.experience);
+		if (expTake.lines.length) {
+			eT = expTake.used;
+			parts.push(`# 任务经历(近期任务与结果,跨周恢复上下文)\n` + expTake.lines.map((l) => `- ${l}`).join("\n"));
 		}
 
 		const user = this.list().filter((e) => e.scope === "user").flatMap((e) => e.lines);
@@ -172,12 +188,41 @@ export class MemoryManager {
 			projectK: kOf(pT),
 			userK: kOf(uT),
 			sessionK: kOf(sT),
-			totalK: kOf(pT + uT + sT),
+			experienceK: kOf(eT),
+			totalK: kOf(pT + uT + sT + eT),
 			capK: CAP_K,
-			ratio: Math.min(1, (pT + uT + sT) / (CAP_K * 1000)),
-			nearLimit: (pT + uT + sT) / (CAP_K * 1000) >= NEAR_LIMIT_RATIO,
+			ratio: Math.min(1, (pT + uT + sT + eT) / (CAP_K * 1000)),
+			nearLimit: (pT + uT + sT + eT) / (CAP_K * 1000) >= NEAR_LIMIT_RATIO,
 		};
-		return { text: parts.join("\n\n"), budget, layers: { project: pT, user: uT, session: sT } };
+		return { text: parts.join("\n\n"), budget, layers: { project: pT, user: uT, session: sT, experience: eT } };
+	}
+
+	/* ---------------- 任务经历(P4 提前:第 4 写入通道,系统任务沉淀) ---------------- */
+
+	/**
+	 * 追加一条任务经历到 <项目根>/.memory/project/experience.md(新条目插最前,上限 100 条)。
+	 * 直接写入(不走建议卡片):系统记录非 agent 主张;写在项目根(非 worktree),防随 worktree 清理丢失。
+	 */
+	appendExperience(input: { title: string; summary?: string; outcome: "done" | "failed" | "cancelled"; source: string }) {
+		const date = new Date();
+		const pad = (n: number) => String(n).padStart(2, "0");
+		const stamp = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+		const outcomeLabel = input.outcome === "done" ? "完成" : input.outcome === "failed" ? "失败" : "终止";
+		const summary = (input.summary ?? "").replace(/\s+/g, " ").trim().slice(0, 160);
+		const line = `[${stamp}] ${outcomeLabel} · ${input.source} · ${input.title.replace(/\s+/g, " ").trim().slice(0, 80)}${summary ? `:${summary}` : ""}`;
+		const dir = this.dir("project");
+		mkdirSync(dir, { recursive: true });
+		const path = join(dir, EXPERIENCE_FILE);
+		let cur: string[] = [];
+		if (existsSync(path)) {
+			try {
+				cur = this.parseFile(path, "project", EXPERIENCE_FILE).lines;
+			} catch {
+				cur = [];
+			}
+		}
+		const merged = [line, ...cur.filter((l) => l !== line)].slice(0, EXPERIENCE_CAP);
+		this.writeFile("project", EXPERIENCE_FILE, merged, "task");
 	}
 
 	/* ---------------- 召回 ---------------- */

@@ -90,6 +90,20 @@ const memoryFor = (workspaceId: string): MemoryManager | null => {
 	return m;
 };
 
+/** 项目根记忆(P3.4 任务经历落点:写在仓库根 .memory,不随 worktree 清理丢失) */
+const memoryRoots = new Map<string, MemoryManager>();
+const memoryForRoot = (projectId: string): MemoryManager | null => {
+	const rec = workspaces.getProject(projectId);
+	if (!rec) return null;
+	let m = memoryRoots.get(projectId);
+	if (!m) {
+		m = new MemoryManager(rec.root);
+		m.bindEmitter(emit);
+		memoryRoots.set(projectId, m);
+	}
+	return m;
+};
+
 function scanTestFiles(cwd: string): string[] {
 	const out: string[] = [];
 	const walk = (dir: string, rel: string, depth: number) => {
@@ -509,6 +523,22 @@ const tasks = new TaskManager({
 	runtimeRoot: RUNTIME_ROOT,
 	getAutomation: (id) => automations.get(id),
 	getRace: (id) => races.get(id),
+	// P3.4 长期记忆:任务终态 → 项目根 .memory/project/experience.md(系统任务沉淀通道)
+	onFinalize: (task) => {
+		try {
+			if (!task.workspaceId) return;
+			const pid = workspaces.locate(task.workspaceId).projectId;
+			if (!pid) return;
+			memoryForRoot(pid)?.appendExperience({
+				outcome: task.status === "done" ? "done" : task.status === "cancelled" ? "cancelled" : "failed",
+				source: task.source,
+				title: task.title,
+				summary: task.summary,
+			});
+		} catch {
+			/* 经历写入失败不影响卡域 */
+		}
+	},
 });
 tasks.bindEmitter(emit);
 tasks.bindWorkerLookup((id) => orchestrator.get(id));

@@ -52,6 +52,7 @@ export function MemoryPanel() {
 				</div>
 				<div className="mt-1.5 text-[11px] leading-relaxed" style={{ color: "var(--fg-faint)" }}>
 					项目层 {budget.projectK}K · 用户层 {budget.userK}K · 会话层 {budget.sessionK}K
+					{typeof (budget as any).experienceK === "number" ? ` · 经历层 ${(budget as any).experienceK}K` : ""}
 					{budget.nearLimit && <span style={{ color: "var(--yellow)" }}> · 接近上限,建议整理</span>}
 				</div>
 			</div>

@@ -133,3 +133,49 @@ describe("M4 召回与边界", () => {
 		expect((MemoryManager.prototype as any).writeAgents).toBeUndefined();
 	});
 });
+
+describe("P3.4 任务经历(长期记忆,第 4 写入通道)", () => {
+	test("appendExperience:新条目插最前;直接落盘不走建议卡;上限 100 条", () => {
+		const m = new MemoryManager(root);
+		let cardEvents = 0;
+		m.bindEmitter((e: any) => {
+			if (e.type === "memory.suggested") cardEvents++;
+		});
+		m.appendExperience({ title: "修购物车金额", summary: "根因是分/元换算;对策=统一以分计算", outcome: "done", source: "chat" });
+		m.appendExperience({ title: "夜间回归超时", summary: "daemon 重启中断", outcome: "failed", source: "automation" });
+		const path = join(root, ".memory/project/experience.md");
+		expect(existsSync(path)).toBe(true);
+		const raw = readFileSync(path, "utf8");
+		expect(raw).toContain("source: task");
+		expect(raw.indexOf("夜间回归超时")).toBeLessThan(raw.indexOf("修购物车金额")); // 新条目在前
+		expect(raw).toContain("失败 · automation");
+		expect(cardEvents).toBe(0); // 不走建议卡片(系统记录非 agent 主张)
+
+		// 上限:塞到 102 条只留最新 100
+		for (let i = 0; i < 102; i++) m.appendExperience({ title: `批量任务 ${i}`, outcome: "done", source: "chat" });
+		const lines = readFileSync(path, "utf8").split("\n").filter((l) => l.startsWith("- "));
+		expect(lines.length).toBeLessThanOrEqual(100);
+		expect(readFileSync(path, "utf8")).toContain("批量任务 101"); // 最新的在
+	});
+
+	test("注入:经历独立成层(不计入项目层,防双重计入);召回可命中经历", () => {
+		const m = new MemoryManager(root);
+		// 项目层常规记忆 + 经历(上一测试已写入 experience.md)
+		m.adopt(m.suggest("project", "conventions.md", ["命令一律 pnpm"], "会话沉淀"));
+		const inj = m.inject();
+		expect(inj.text).toContain("# 任务经历");
+		expect(inj.text).toContain("# 项目记忆(命令/约定/坑)");
+		// 项目层段落里不得混入经历内容;经历层段落里不得混入常规记忆
+		const projSection = inj.text.split("# 项目记忆")[1]?.split("#")[0] ?? "";
+		const expSection = inj.text.split("# 任务经历")[1]?.split("#")[0] ?? "";
+		expect(projSection).toContain("pnpm");
+		expect(projSection).not.toContain("批量任务");
+		expect(expSection).toContain("批量任务");
+		expect(expSection).not.toContain("pnpm");
+		expect(inj.budget.experienceK).toBeGreaterThan(0);
+
+		// 召回:关键词命中经历条目
+		const hits = m.recallKeywords(["批量任务 101"]);
+		expect(hits.some((h) => h.file === "experience.md")).toBe(true);
+	});
+});
