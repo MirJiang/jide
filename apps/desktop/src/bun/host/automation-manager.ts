@@ -344,6 +344,8 @@ export class AutomationManager {
 				workspaceId = a.target.workspaceId;
 				workspacePath = loc.cwd;
 			}
+			rec.workspaceId = workspaceId;
+			this.flushRun(rec);
 
 			// 分派:router = 提交常驻 Router 拆解分派 Worker 池;direct/fallback = 直连会话执行
 			const wantRouter = a.dispatch === "router" && !!this.deps.orchestrator;
@@ -499,12 +501,31 @@ export class AutomationManager {
 				`3. 最后用一两句话汇总执行结果(成功/失败与关键信息)。`,
 				`除上述编排工具外不要使用其他工具。`,
 			].join("\n");
-			// Router 可能上一轮尚未收束(busy):短候重试一次
+			// Router 可能上一轮尚未收束(busy):短候重试一次;prompt 有界(挂起 → 回退直执)
+			const promptDeadlineMs = Math.min(timeoutMs, 120_000);
+			const tryPrompt = async (): Promise<"ok" | "prompt-timeout"> => {
+				const p = this.deps.host.prompt(routerId, brief);
+				const r = await Promise.race([p, new Promise<"prompt-timeout">((resolve) => setTimeout(() => resolve("prompt-timeout"), promptDeadlineMs))]);
+				return r === "prompt-timeout" ? "prompt-timeout" : "ok";
+			};
+			let prompted: "ok" | "prompt-timeout";
 			try {
-				await this.deps.host.prompt(routerId, brief);
-			} catch {
-				await new Promise((r) => setTimeout(r, 2000));
-				await this.deps.host.prompt(routerId, brief);
+				prompted = await tryPrompt();
+				if (prompted === "prompt-timeout") {
+					// 重试一次(可能上一轮没收束)
+					await new Promise((r) => setTimeout(r, 2000));
+					prompted = await tryPrompt();
+				}
+			} catch (err: any) {
+				this.deps.host.log("warn", `Router 任务书投递失败,自动化回退直执:${err?.message ?? err}`);
+				unsub();
+				return false;
+			}
+			if (prompted === "prompt-timeout") {
+				this.deps.host.log("warn", "Router 任务书投递超时,自动化回退直执");
+				await this.deps.host.abort(routerId).catch(() => {});
+				unsub();
+				return false;
 			}
 
 			// spawn 窗口:窗口内没有任何 Worker 出现 → Router 未按约束接管,回退直执

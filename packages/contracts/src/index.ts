@@ -121,6 +121,8 @@ export interface AutomationRun {
 	sessionId?: string;
 	/** 实际分派路径:router = Router 委派;fallback = Router 未接管回退直执;direct = 直执 */
 	dispatched?: "router" | "fallback" | "direct";
+	/** 本轮实际目标工作区(repo 目标 = 新建隔离区) */
+	workspaceId?: string;
 	/** Router 分派产生的 Worker ids */
 	workerIds?: string[];
 	/** 摘要:模型回复尾 / 验证结果 */
@@ -483,6 +485,11 @@ export interface HostRequestShapes {
 	"workspace.switch": {
 		params: { projectId: string; workspaceId: string };
 		response: { ok: true; activeWorkspaceId: string } | { ok: false; error: string };
+	};
+	/** P3.2:移除隔离工作区(连带分支;Default 不可移除;有子工作区时拒绝) */
+	"workspace.remove": {
+		params: { projectId: string; workspaceId: string };
+		response: { ok: true } | { ok: false; error: string };
 	};
 	/** P3.2:当前工作区成果提交(用户语义,Default 也可提交) */
 	"git.commitAll": {

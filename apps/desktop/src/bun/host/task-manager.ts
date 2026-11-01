@@ -220,6 +220,7 @@ export class TaskManager {
 					automationId: run.automationId,
 					runId: run.id,
 					...(run.sessionId ? { routerSessionId: run.sessionId } : {}),
+					...(run.workspaceId ? { workspaceId: run.workspaceId } : {}),
 					workerIds: run.workerIds ? [...run.workerIds] : [],
 					createdAt: now,
 					updatedAt: now,
@@ -227,6 +228,7 @@ export class TaskManager {
 			}
 			if (!task) return;
 			if (run.sessionId && !task.routerSessionId) task.routerSessionId = run.sessionId;
+			if (run.workspaceId && !task.workspaceId) task.workspaceId = run.workspaceId;
 			if (run.workerIds?.length && task.workerIds.join() !== run.workerIds.join()) {
 				task.workerIds = [...run.workerIds];
 			}

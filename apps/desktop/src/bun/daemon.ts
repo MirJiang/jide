@@ -718,7 +718,7 @@ const handlers = {
 		return {
 			ok: true,
 			activeWorkspaceId: rec?.activeWorkspaceId ?? list[0]?.id ?? null,
-			workspaces: list.map((w) => ({ id: w.id, kind: w.kind, branch: w.branch, path: w.path, baseRef: w.baseRef })),
+			workspaces: list.map((w) => ({ id: w.id, kind: w.kind, branch: w.branch, path: w.path, baseRef: w.baseRef, parentWorkspaceId: w.parentWorkspaceId, source: w.source })),
 		};
 	},
 	"workspace.create": async ({ projectId, name, fromRef, parentWorkspaceId }: any) => {
@@ -744,6 +744,10 @@ const handlers = {
 	"workspace.switch": async ({ projectId, workspaceId }: any) => {
 		const r = await workspaces.switchWorkspace(projectId, workspaceId);
 		return r.ok ? { ok: true, activeWorkspaceId: r.activeWorkspaceId } : { ok: false, error: r.error };
+	},
+	"workspace.remove": async ({ projectId, workspaceId }: any) => {
+		const r = await workspaces.removeWorktree(projectId, workspaceId);
+		return r.ok ? { ok: true } : { ok: false, error: r.error };
 	},
 	/* ---- P3.2:用户提交与评审入队(合并走 W6 门禁;stacked 按血缘) ---- */
 	"git.commitAll": async ({ workspaceId, message }: any) => {

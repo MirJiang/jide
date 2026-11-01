@@ -229,6 +229,7 @@ const DAEMON_METHODS = [
 	"project.trust",
 	"workspace.list",
 	"workspace.create",
+	"workspace.remove",
 	"workspace.switch",
 	"fs.list",
 	"fs.read",
