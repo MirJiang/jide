@@ -161,3 +161,69 @@ describe("OrchestratorManager(Worker 池与委派)", () => {
 		expect(mgr.get(w.id)!.status).toBe("aborted");
 	});
 });
+
+describe("OrchestratorManager(按 Worker 回喂 + 常驻 Router,P3)", () => {
+	test("双轨回喂:各 Worker 回喂自己的发起方会话,不串台", async () => {
+		const { mgr, deps, sessions, settle } = makeDeps();
+		const feedbackTo: string[] = [];
+		const origPrompt = deps.host.prompt.bind(deps.host);
+		deps.host.prompt = async (sessionId: string, text: string) => {
+			if (text.includes("【Worker")) feedbackTo.push(sessionId);
+			return origPrompt(sessionId, text);
+		};
+		const origSteer = deps.host.steerSession.bind(deps.host);
+		deps.host.steerSession = async (sessionId: string, text: string) => {
+			if (text.includes("【Worker")) feedbackTo.push(sessionId);
+			return origSteer(sessionId, text);
+		};
+		sessions.set("router-A", { status: "idle", messages: [] });
+		sessions.set("router-B", { status: "busy", messages: [] }); // B 忙 → 走 steer
+		const wA = mgr.spawnWorker({ objective: "A", workspaceId: "p:default", routerSessionId: "router-A" });
+		const wB = mgr.spawnWorker({ objective: "B", workspaceId: "p:default", routerSessionId: "router-B" });
+		await waitUntil(() => mgr.get(wA.id)!.status === "running" && mgr.get(wB.id)!.status === "running");
+		settle("s-1");
+		settle("s-2");
+		expect(await waitUntil(() => feedbackTo.length === 2)).toBe(true);
+		expect(mgr.get(wA.id)!.routerSessionId).toBe("router-A");
+		// A 空闲 → prompt 回喂;B 忙 → steer 回喂
+		expect(feedbackTo).toContain("router-A");
+		expect(feedbackTo).toContain("router-B");
+	});
+
+	test("无 routerSessionId 的 Worker 回退旧单槽(noteRouter)", async () => {
+		const { mgr, deps, sessions, settle } = makeDeps();
+		const feedbackTo: string[] = [];
+		const origPrompt = deps.host.prompt.bind(deps.host);
+		deps.host.prompt = async (sessionId: string, text: string) => {
+			if (text.includes("【Worker")) feedbackTo.push(sessionId);
+			return origPrompt(sessionId, text);
+		};
+		mgr.noteRouter("legacy-router");
+		sessions.set("legacy-router", { status: "idle", messages: [] });
+		const w = mgr.spawnWorker({ objective: "x", workspaceId: "p:default" });
+		await waitUntil(() => mgr.list()[0].status === "running");
+		settle("s-1");
+		expect(await waitUntil(() => feedbackTo.length === 1)).toBe(true);
+		expect(feedbackTo[0]).toBe("legacy-router");
+	});
+
+	test("ensureRouter:懒创建带 orchestrator 旗标;复用;亡了重建", async () => {
+		const { mgr, deps, sessions } = makeDeps();
+		const created: any[] = [];
+		const origCreate = deps.host.createSession.bind(deps.host);
+		deps.host.createSession = async (opts: any) => {
+			created.push(opts);
+			return origCreate(opts);
+		};
+		const r1 = await mgr.ensureRouter();
+		expect(r1).toBe("s-1");
+		expect(created[0].orchestrator).toBe(true);
+		const r2 = await mgr.ensureRouter(); // 存活 → 复用,不再建
+		expect(r2).toBe(r1);
+		expect(created.length).toBe(1);
+		sessions.delete(r1); // 会话亡
+		const r3 = await mgr.ensureRouter();
+		expect(r3).toBe("s-2");
+		expect(created.length).toBe(2);
+	});
+});

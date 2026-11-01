@@ -30,13 +30,15 @@ export interface WorkerRecord {
 	speculative?: boolean;
 	/** 投机验证结论 */
 	verified?: "green" | "red" | "skipped";
+	/** 发起方会话 id(完成回喂目标;双轨:聊天会话或常驻 Router) */
+	routerSessionId?: string;
 	/** Watchdog 已提醒过(一次) */
 	loopWarned?: boolean;
 }
 
 export interface OrchestratorDeps {
 	host: {
-		createSession(opts: { workspacePath: string; workspaceId?: string; model?: { provider: string; modelId: string } }): Promise<{ sessionId: string }>;
+		createSession(opts: { workspacePath: string; workspaceId?: string; model?: { provider: string; modelId: string }; orchestrator?: boolean }): Promise<{ sessionId: string }>;
 		prompt(sessionId: string, text: string): Promise<void>;
 		steerSession(sessionId: string, text: string): Promise<void>;
 		abort(sessionId: string): Promise<void>;
@@ -137,7 +139,7 @@ export class OrchestratorManager {
 
 	/* ---------------- Router 注册与回喂 ---------------- */
 
-	/** 扩展每次桥调用带上发起会话 id;首次见到即注册为 Router(单会话语义下即当前对话) */
+	/** 扩展每次桥调用带上发起会话 id;首次见到即登记(兼容旧单槽回喂;主路径为按 Worker 回喂) */
 	noteRouter(sessionId?: string) {
 		if (sessionId && !this.routerSessionId) {
 			this.routerSessionId = sessionId;
@@ -145,8 +147,9 @@ export class OrchestratorManager {
 		}
 	}
 
-	private async notifyRouter(text: string) {
-		const rid = this.routerSessionId;
+	/** 按发起方回喂:优先该 Worker 自己的 routerSessionId,缺省回退旧单槽 */
+	private async notifyRouter(text: string, rec?: WorkerRecord) {
+		const rid = rec?.routerSessionId ?? this.routerSessionId;
 		if (!rid) return;
 		const st = this.deps.host.getSession(rid)?.status;
 		try {
@@ -155,6 +158,29 @@ export class OrchestratorManager {
 		} catch (err: any) {
 			this.deps.host.log("warn", `Router 回喂失败:${err?.message ?? err}`);
 		}
+	}
+
+	/* ---------------- 常驻 Router 会话(P3:双轨;自动来源统一入口) ---------------- */
+
+	private persistentRouterId: string | null = null;
+
+	/**
+	 * 常驻 Router 会话(懒创建,亡了重建):automations/事件等自动来源经它拆解分派。
+	 * cwd = runtime 根(与精判会话同),模型 = Router 专用模型(空则 pi 默认)。
+	 */
+	async ensureRouter(): Promise<string> {
+		const st = this.persistentRouterId ? this.deps.host.getSession(this.persistentRouterId) : undefined;
+		if (this.persistentRouterId && st && st.status !== "disposed") return this.persistentRouterId;
+		const modelKey = this.deps.getRouterModelKey?.() ?? "";
+		const model = modelKey ? (parseModelKey(modelKey) ?? undefined) : undefined;
+		const entry = await this.deps.host.createSession({
+			workspacePath: this.deps.judgeCwd ?? process.cwd(),
+			model,
+			orchestrator: true,
+		});
+		this.persistentRouterId = entry.sessionId;
+		this.deps.host.log("info", `常驻 Router 会话就绪:${entry.sessionId.slice(0, 8)}`);
+		return entry.sessionId;
 	}
 
 	/* ---------------- Trigger 模型精判(两级过滤第二级) ---------------- */
@@ -224,6 +250,7 @@ export class OrchestratorManager {
 			status: "queued",
 			startedAt: Date.now(),
 			...(opts.speculative ? { speculative: true } : {}),
+			...(opts.routerSessionId ? { routerSessionId: opts.routerSessionId } : {}),
 		};
 		this.workers.set(rec.id, rec);
 		this.notifyWorkerUpdate(rec);
@@ -338,6 +365,7 @@ export class OrchestratorManager {
 				rec.status === "done"
 					? `【Worker ${rec.id} 完成】目标:${rec.objective.slice(0, 120)}\n结果摘要:${rec.summary ?? "(无文本输出)"}`
 					: `【Worker ${rec.id} ${rec.status}】目标:${rec.objective.slice(0, 120)}${rec.error ? `\n原因:${rec.error}` : ""}`,
+				rec,
 			);
 			this.pump();
 		}
@@ -398,7 +426,7 @@ export class OrchestratorManager {
 			w.summary = last?.text?.slice(-600);
 		}
 		w.durationMs = Date.now() - w.startedAt;
-		await this.notifyRouter(`【Worker ${w.id} ${w.status}】${w.summary ?? w.error ?? ""}`);
+		await this.notifyRouter(`【Worker ${w.id} ${w.status}】${w.summary ?? w.error ?? ""}`, w);
 	}
 
 	/* ---------------- Watchdog ---------------- */
@@ -419,7 +447,7 @@ export class OrchestratorManager {
 					w.status = "timeout";
 					w.error = `Watchdog:超时(${timeoutMin} 分钟),已中断`;
 					this.emit({ type: "host.log", level: "warn", message: `Watchdog:Worker ${w.id} 超时中断` });
-					await this.notifyRouter(`【Watchdog】Worker ${w.id} 超时已中断:${w.objective.slice(0, 80)}`);
+					await this.notifyRouter(`【Watchdog】Worker ${w.id} 超时已中断:${w.objective.slice(0, 80)}`, w);
 				})();
 			}
 		}

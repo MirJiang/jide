@@ -328,3 +328,125 @@ describe("AutomationManager(运行引擎)", () => {
 		rmSync(root, { recursive: true, force: true });
 	});
 });
+
+/* ---------------- Router 分派(P3) ---------------- */
+
+function makeOrchestrator() {
+	const listeners = new Set<(w: { id: string; routerSessionId?: string; status: string }) => void>();
+	const state = { ensureFails: false, workerStatus: "done" };
+	let routerCount = 0;
+	const orch = {
+		async ensureRouter() {
+			if (state.ensureFails) throw new Error("no router model");
+			routerCount++;
+			return `router-${routerCount}`;
+		},
+		onWorkerUpdate(cb: (w: { id: string; routerSessionId?: string; status: string }) => void) {
+			listeners.add(cb);
+			return () => listeners.delete(cb);
+		},
+		async waitWorkers(ids: string[]) {
+			return ids.map((id) => ({ id, status: state.workerStatus }));
+		},
+	};
+	const spawnWorker = (routerId: string, workerId = `w-${Math.random().toString(36).slice(2, 6)}`) => {
+		for (const cb of [...listeners]) cb({ id: workerId, routerSessionId: routerId, status: "running" });
+		return workerId;
+	};
+	return { orch, state, spawnWorker, routerCount: () => routerCount };
+}
+
+describe("AutomationManager(Router 分派,P3)", () => {
+	test("save 归一化 dispatch:router 保留,其余归 direct", () => {
+		const { mgr, root } = makeDeps();
+		expect(mgr.save(baseAutomation({ dispatch: "router" })).dispatch).toBe("router");
+		expect(mgr.save(baseAutomation({ dispatch: "bogus" as any })).dispatch).toBe("direct");
+		expect(mgr.save(baseAutomation()).dispatch).toBe("direct"); // 缺省直执(存量兼容)
+		rmSync(root, { recursive: true, force: true });
+	});
+
+	test("Router 分派成功:任务书给常驻 Router → spawn_worker → 收束汇总;记 dispatched=router + workerIds", async () => {
+		const { orch, spawnWorker, routerCount } = makeOrchestrator();
+		const { mgr, deps, calls, root, settle } = makeDeps({ orchestrator: orch, routerSpawnWindowMs: 3000 });
+		const routerPrompts: string[] = [];
+		const origPrompt = deps.host.prompt.bind(deps.host);
+		deps.host.prompt = async (sessionId: string, text: string) => {
+			if (sessionId.startsWith("router-")) {
+				routerPrompts.push(text);
+				setTimeout(() => spawnWorker(sessionId, "w-r1"), 30);
+				setTimeout(() => settle(sessionId), 120);
+				return;
+			}
+			return origPrompt(sessionId, text);
+		};
+		const a = mgr.save(baseAutomation({ dispatch: "router", autoVerify: false }));
+		await mgr.run(a.id, "manual");
+		expect(await waitUntil(() => mgr.list().runs[a.id][0].status === "ok", 8000)).toBe(true);
+		const run = mgr.list().runs[a.id][0];
+		expect(run.dispatched).toBe("router");
+		expect(run.workerIds).toEqual(["w-r1"]);
+		expect(run.sessionId).toMatch(/^router-/);
+		expect(run.summary).toContain("Worker 1/1 正常收束");
+		expect(routerPrompts[0]).toContain('workspaceId = "p:default"');
+		expect(routerPrompts[0]).toContain("spawn_worker");
+		expect(calls.createSession).toBe(0); // 未走直执
+		expect(routerCount()).toBe(1);
+		rmSync(root, { recursive: true, force: true });
+	});
+
+	test("spawn 窗口无 Worker → 回退直执(fallback),run 记 dispatched=fallback", async () => {
+		const { orch } = makeOrchestrator();
+		const { mgr, deps, calls, root, settle } = makeDeps({ orchestrator: orch, routerSpawnWindowMs: 200 });
+		const origAbort = deps.host.abort.bind(deps.host);
+		deps.host.abort = async (sessionId: string) => {
+			if (!sessionId.startsWith("router-")) return origAbort(sessionId); // 假 abort 对未知会话会炸
+		};
+		const origPrompt = deps.host.prompt.bind(deps.host);
+		deps.host.prompt = async (sessionId: string, text: string) => {
+			if (sessionId.startsWith("router-")) return; // Router 收了任务书但始终不派 Worker
+			return origPrompt(sessionId, text);
+		};
+		const a = mgr.save(baseAutomation({ dispatch: "router", autoVerify: false }));
+		await mgr.run(a.id, "manual");
+		await waitUntil(() => calls.prompt === 1); // 回退后的直执 prompt
+		settle("s-1");
+		expect(await waitUntil(() => mgr.list().runs[a.id][0].status === "ok", 8000)).toBe(true);
+		const run = mgr.list().runs[a.id][0];
+		expect(run.dispatched).toBe("fallback");
+		expect(run.sessionId).toBe("s-1"); // 直执会话
+		expect(run.workerIds).toBeUndefined();
+		expect(run.summary).toContain("done-s-1");
+		expect(calls.createSession).toBe(1);
+		rmSync(root, { recursive: true, force: true });
+	});
+
+	test("Router 不可用(ensureRouter 抛)→ 直接回退直执", async () => {
+		const { orch, state } = makeOrchestrator();
+		state.ensureFails = true;
+		const { mgr, root, settle } = makeDeps({ orchestrator: orch });
+		const a = mgr.save(baseAutomation({ dispatch: "router", autoVerify: false }));
+		await mgr.run(a.id, "manual");
+		await waitUntil(() => mgr.list().runs[a.id][0].sessionId === "s-1");
+		settle("s-1");
+		expect(await waitUntil(() => mgr.list().runs[a.id][0].status === "ok", 8000)).toBe(true);
+		const run = mgr.list().runs[a.id][0];
+		expect(run.dispatched).toBe("fallback");
+		expect(run.sessionId).toBe("s-1");
+		rmSync(root, { recursive: true, force: true });
+	});
+
+	test("dispatch=direct:直执路径,不碰 Router", async () => {
+		const { orch, routerCount } = makeOrchestrator();
+		const { mgr, root, settle } = makeDeps({ orchestrator: orch });
+		const a = mgr.save(baseAutomation({ dispatch: "direct", autoVerify: false }));
+		await mgr.run(a.id, "manual");
+		await waitUntil(() => mgr.list().runs[a.id][0].sessionId === "s-1");
+		settle("s-1");
+		expect(await waitUntil(() => mgr.list().runs[a.id][0].status === "ok", 8000)).toBe(true);
+		const run = mgr.list().runs[a.id][0];
+		expect(run.dispatched).toBe("direct");
+		expect(run.sessionId).toBe("s-1");
+		expect(routerCount()).toBe(0);
+		rmSync(root, { recursive: true, force: true });
+	});
+});

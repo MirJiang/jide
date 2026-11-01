@@ -103,6 +103,8 @@ export interface Automation {
 	reuseSession: boolean;
 	/** run 结束后自动 test_run + checks,结果进评审队列 */
 	autoVerify: boolean;
+	/** 分派方式:router = 提交常驻 Router 拆解分派 Worker;direct = 直接建会话执行。缺省 direct(存量兼容) */
+	dispatch?: "router" | "direct";
 	/** 单轮超时(分钟,默认 30) */
 	timeoutMin: number;
 	createdAt: number;
@@ -117,6 +119,10 @@ export interface AutomationRun {
 	/** 触发来源 */
 	trigger: "manual" | "schedule" | "event";
 	sessionId?: string;
+	/** 实际分派路径:router = Router 委派;fallback = Router 未接管回退直执;direct = 直执 */
+	dispatched?: "router" | "fallback" | "direct";
+	/** Router 分派产生的 Worker ids */
+	workerIds?: string[];
 	/** 摘要:模型回复尾 / 验证结果 */
 	summary?: string;
 	tests?: { selected: number; total: number; passed: number; failed: number };
@@ -146,6 +152,8 @@ export interface WorkerRecordView {
 	speculative?: boolean;
 	/** 投机验证结论 */
 	verified?: "green" | "red" | "skipped";
+	/** 发起方会话 id(完成回喂/任务卡归组) */
+	routerSessionId?: string;
 }
 
 /* ---------------- 竞赛域(P3:fan-out 一拖 N 对比选优) ---------------- */

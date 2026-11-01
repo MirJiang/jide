@@ -472,7 +472,7 @@ races.setCommitFn((workspaceId, message) => workspaces.commitAll(workspaceId, me
 races.bindEmitter(emit);
 races.startWatching();
 
-/* ---- 自动化域(P1.5) ---- */
+/* ---- 自动化域(P1.5;P3 起 dispatch=router 经常驻 Router 拆解分派) ---- */
 const automations = new AutomationManager({
 	host,
 	workspaces,
@@ -484,6 +484,11 @@ const automations = new AutomationManager({
 		runTests: (cwd, files_, total) => runner.run(cwd, files_, total),
 		runChecks: (workspaceId) => checks.run(workspaceId),
 		enqueueChecks: (workspaceId, passed, total) => review.enqueueChecks(workspaceId, passed, total),
+	},
+	orchestrator: {
+		ensureRouter: () => orchestrator.ensureRouter(),
+		onWorkerUpdate: (cb) => orchestrator.onWorkerUpdate(cb),
+		waitWorkers: (ids, timeoutSec) => orchestrator.waitWorkers(ids, timeoutSec),
 	},
 });
 automations.bindEmitter(emit);

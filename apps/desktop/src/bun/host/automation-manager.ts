@@ -113,6 +113,12 @@ export interface AutomationDeps {
 		runChecks(workspaceId: string): Promise<{ ok: boolean; results: Array<{ passed: boolean; title: string }> }>;
 		enqueueChecks(workspaceId: string, passed: number, total: number): void;
 	};
+	/** Router 分派(P3):常驻 Router 会话拆解 → Worker 池;缺省无 = dispatch "router" 回退直执 */
+	orchestrator?: {
+		ensureRouter(): Promise<string>;
+		onWorkerUpdate(cb: (w: { id: string; routerSessionId?: string; status: string }) => void): () => void;
+		waitWorkers(ids: string[], timeoutSec?: number): Promise<Array<{ id: string; status: string }>>;
+	};
 	runtimeRoot: string;
 	/** 全局并发上限(默认 2) */
 	maxConcurrent?: number;
@@ -120,6 +126,8 @@ export interface AutomationDeps {
 	eventCooldownMin?: number;
 	/** timeoutMin 校验下限(测试可调低;默认 1 分钟) */
 	timeoutMinFloor?: number;
+	/** Router 分派 spawn 窗口(ms,窗口内无 Worker 即回退直执;缺省 = min(120s, max(30s, timeout/3))) */
+	routerSpawnWindowMs?: number;
 }
 
 const EMPTY_STORE: AutomationStore = { automations: [], runs: {} };
@@ -229,6 +237,7 @@ export class AutomationManager {
 			enabled: a.enabled !== false,
 			reuseSession: a.reuseSession === true,
 			autoVerify: a.autoVerify !== false,
+			dispatch: a.dispatch === "router" ? "router" : "direct",
 			timeoutMin: Math.min(720, Math.max(this.deps.timeoutMinFloor ?? 1, Number(a.timeoutMin) || 30)),
 		};
 	}
@@ -336,49 +345,26 @@ export class AutomationManager {
 				workspacePath = loc.cwd;
 			}
 
-			// 会话(可复用;亡了重建)
-			let sessionId: string;
-			const reuse = a.reuseSession ? this.reused.get(a.id) : undefined;
-			const snap = reuse ? this.deps.host.getSession(reuse) : undefined;
-			if (reuse && snap && snap.status !== "disposed") {
-				if (snap.status === "busy") throw new Error("复用会话上一轮仍在运行");
-				sessionId = reuse;
+			// 分派:router = 提交常驻 Router 拆解分派 Worker 池;direct/fallback = 直连会话执行
+			const wantRouter = a.dispatch === "router" && !!this.deps.orchestrator;
+			let handled = false;
+			if (wantRouter) {
+				rec.dispatched = "router";
+				handled = await this.execViaRouter(a, rec, workspaceId, workspacePath);
+				if (!handled) {
+					// Router 未接管(不可用/spawn 窗口无 Worker/轮次异常)→ 清残留,回退直执
+					rec.dispatched = "fallback";
+					rec.sessionId = undefined;
+					rec.workerIds = undefined;
+					rec.summary = undefined;
+					rec.error = undefined;
+					rec.status = "running";
+					this.flushRun(rec);
+				}
 			} else {
-				const model = a.modelKey ? (parseModelKey(a.modelKey) ?? undefined) : undefined;
-				const entry = await this.deps.host.createSession({ workspacePath, workspaceId, model });
-				sessionId = entry.sessionId;
-				if (a.reuseSession) this.reused.set(a.id, sessionId);
+				rec.dispatched = "direct";
 			}
-			rec.sessionId = sessionId;
-			this.flushRun(rec);
-
-			// prompt + 等 settled(一次性订阅,超时兜底)
-			let unsub = () => {};
-			const settledP = new Promise<"settled">((resolve) => {
-				unsub = this.deps.host.onSettled(sessionId, () => resolve("settled"));
-			});
-			const timeoutMs = a.timeoutMin * 60_000;
-			try {
-				await this.deps.host.prompt(sessionId, a.prompt);
-			} finally {
-				// prompt 受理失败也要退订(在 catch 统一收尾前)
-			}
-			const outcome = await Promise.race([
-				settledP,
-				new Promise<"timeout">((r) => setTimeout(() => r("timeout"), timeoutMs)),
-			]);
-			unsub();
-
-			if (outcome === "timeout") {
-				await this.deps.host.abort(sessionId).catch(() => {});
-				rec.status = "timeout";
-				rec.error = `超时(${a.timeoutMin} 分钟),已中断会话`;
-			} else {
-				rec.status = "ok";
-				const s = this.deps.host.getSnapshot(sessionId);
-				const lastAssistant = [...(s?.messages ?? [])].reverse().find((m) => m.role === "assistant");
-				if (lastAssistant?.text) rec.summary = lastAssistant.text.slice(-400);
-			}
+			if (!handled) await this.execDirect(a, rec, workspaceId, workspacePath);
 
 			// 自动验证(结果失败不改 run 状态——run 完成,结论看字段;入评审队列人审)
 			if (a.autoVerify && rec.status === "ok") {
@@ -408,6 +394,162 @@ export class AutomationManager {
 			this.running.delete(a.id);
 			this.flushRun(rec);
 			this.pump();
+		}
+	}
+
+	/** 直执(P1.5 原路径):目标工作区建会话跑 prompt(可复用会话) */
+	private async execDirect(a: Automation, rec: AutomationRun, workspaceId: string, workspacePath: string) {
+		// 会话(可复用;亡了重建)
+		let sessionId: string;
+		const reuse = a.reuseSession ? this.reused.get(a.id) : undefined;
+		const snap = reuse ? this.deps.host.getSession(reuse) : undefined;
+		if (reuse && snap && snap.status !== "disposed") {
+			if (snap.status === "busy") throw new Error("复用会话上一轮仍在运行");
+			sessionId = reuse;
+		} else {
+			const model = a.modelKey ? (parseModelKey(a.modelKey) ?? undefined) : undefined;
+			const entry = await this.deps.host.createSession({ workspacePath, workspaceId, model });
+			sessionId = entry.sessionId;
+			if (a.reuseSession) this.reused.set(a.id, sessionId);
+		}
+		rec.sessionId = sessionId;
+		this.flushRun(rec);
+
+		// prompt + 等 settled(一次性订阅,超时兜底)
+		let unsub = () => {};
+		const settledP = new Promise<"settled">((resolve) => {
+			unsub = this.deps.host.onSettled(sessionId, () => resolve("settled"));
+		});
+		const timeoutMs = a.timeoutMin * 60_000;
+		try {
+			await this.deps.host.prompt(sessionId, a.prompt);
+		} finally {
+			// prompt 受理失败也要退订(在 catch 统一收尾前)
+		}
+		const outcome = await Promise.race([
+			settledP,
+			new Promise<"timeout">((r) => setTimeout(() => r("timeout"), timeoutMs)),
+		]);
+		unsub();
+
+		if (outcome === "timeout") {
+			await this.deps.host.abort(sessionId).catch(() => {});
+			rec.status = "timeout";
+			rec.error = `超时(${a.timeoutMin} 分钟),已中断会话`;
+		} else {
+			rec.status = "ok";
+			const s = this.deps.host.getSnapshot(sessionId);
+			const lastAssistant = [...(s?.messages ?? [])].reverse().find((m) => m.role === "assistant");
+			if (lastAssistant?.text) rec.summary = lastAssistant.text.slice(-400);
+		}
+	}
+
+	/* ---------------- Router 分派(P3) ---------------- */
+
+	/** 常驻 Router 一次只能跑一轮 → 全部 Router 分派经此串行 */
+	private routerChain: Promise<void> = Promise.resolve();
+
+	private execViaRouter(a: Automation, rec: AutomationRun, workspaceId: string, workspacePath: string): Promise<boolean> {
+		const next = this.routerChain.then(() => this.execViaRouterOnce(a, rec, workspaceId, workspacePath));
+		this.routerChain = next.then(
+			() => undefined,
+			() => undefined,
+		);
+		return next;
+	}
+
+	/**
+	 * 经常驻 Router 执行:任务书 → Router spawn_worker 委派(必须落指定工作区)→ wait 收束 → 汇总。
+	 * 返回 true = Router 已接管(run 已定型);false = 未接管,调用方回退直执。
+	 */
+	private async execViaRouterOnce(a: Automation, rec: AutomationRun, workspaceId: string, workspacePath: string): Promise<boolean> {
+		const orch = this.deps.orchestrator!;
+		let routerId: string;
+		try {
+			routerId = await orch.ensureRouter();
+		} catch (err: any) {
+			this.deps.host.log("warn", `常驻 Router 不可用,自动化回退直执:${err?.message ?? err}`);
+			return false;
+		}
+		rec.sessionId = routerId;
+		this.flushRun(rec);
+		// 收集本轮分派的 Worker(按发起方 = 常驻 Router 过滤)
+		const workerIds: string[] = [];
+		const unsubW = orch.onWorkerUpdate((w) => {
+			if (w.routerSessionId === routerId && !workerIds.includes(w.id)) workerIds.push(w.id);
+		});
+		let unsub = () => {};
+		const timeoutMs = a.timeoutMin * 60_000;
+		try {
+			let settledFlag = false;
+			const settledP = new Promise<"settled">((resolve) => {
+				unsub = this.deps.host.onSettled(routerId, () => {
+					settledFlag = true;
+					resolve("settled");
+				});
+			});
+			const brief = [
+				`【自动化任务 · 需委派执行】目标工作区 workspaceId = "${workspaceId}"(路径:${workspacePath})。`,
+				`任务书:`,
+				a.prompt,
+				``,
+				`执行要求:`,
+				`1. 用 spawn_worker 委派本任务,必须传 workspaceId:"${workspaceId}"(禁止省略或换其他值),任务书内容照传给 Worker。`,
+				`2. 用 wait_workers 等待 Worker 完成。`,
+				`3. 最后用一两句话汇总执行结果(成功/失败与关键信息)。`,
+				`除上述编排工具外不要使用其他工具。`,
+			].join("\n");
+			// Router 可能上一轮尚未收束(busy):短候重试一次
+			try {
+				await this.deps.host.prompt(routerId, brief);
+			} catch {
+				await new Promise((r) => setTimeout(r, 2000));
+				await this.deps.host.prompt(routerId, brief);
+			}
+
+			// spawn 窗口:窗口内没有任何 Worker 出现 → Router 未按约束接管,回退直执
+			const windowMs = this.deps.routerSpawnWindowMs ?? Math.min(120_000, Math.max(30_000, Math.floor(timeoutMs / 3)));
+			const deadline = Date.now() + windowMs;
+			while (Date.now() < deadline && !workerIds.length && !settledFlag) {
+				await new Promise((r) => setTimeout(r, 150));
+			}
+			if (!workerIds.length) {
+				if (!settledFlag) await this.deps.host.abort(routerId).catch(() => {});
+				unsub();
+				return false;
+			}
+			rec.workerIds = [...workerIds];
+			this.flushRun(rec);
+
+			const outcome = await Promise.race([
+				settledP,
+				new Promise<"timeout">((r) => setTimeout(() => r("timeout"), timeoutMs)),
+			]);
+			unsub();
+			if (outcome === "timeout") {
+				await this.deps.host.abort(routerId).catch(() => {});
+				rec.status = "timeout";
+				rec.error = `超时(${a.timeoutMin} 分钟),已中断 Router 轮`;
+				return true;
+			}
+
+			// Router 收束:等它派出的 Worker 全部收束(预算剩余,下限 5 分钟),汇总带 Worker 结果
+			const startedAt = rec.startedAt;
+			const remainSec = Math.max(300, Math.floor((timeoutMs - (Date.now() - startedAt)) / 1000));
+			const done = await orch.waitWorkers(workerIds, remainSec);
+			const bad = done.filter((w) => w.status !== "done").length;
+			rec.status = "ok";
+			const s = this.deps.host.getSnapshot(routerId);
+			const lastAssistant = [...(s?.messages ?? [])].reverse().find((m) => m.role === "assistant");
+			const routerText = lastAssistant?.text?.slice(-400) ?? "";
+			rec.summary = [routerText, bad ? `⚠ ${bad}/${done.length} 个 Worker 未正常收束` : `Worker ${done.length}/${done.length} 正常收束`].filter(Boolean).join(" · ");
+			return true;
+		} catch (err: any) {
+			this.deps.host.log("warn", `Router 分派异常,自动化回退直执:${err?.message ?? err}`);
+			unsub();
+			return false;
+		} finally {
+			unsubW();
 		}
 	}
 

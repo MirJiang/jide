@@ -169,6 +169,7 @@ function blankAutomation(projectId: string | null, workspaceId: string | null): 
 		target: projectId ? { kind: "repo", repoId: projectId } : { kind: "workspace", workspaceId: workspaceId ?? "" },
 		reuseSession: false,
 		autoVerify: true,
+		dispatch: "router",
 		timeoutMin: 30,
 		createdAt: 0,
 	};
@@ -449,6 +450,7 @@ function AutomationPanel({ onClose }: { onClose: () => void }) {
 									<div className="mt-0.5 font-mono text-[10.5px]" style={{ color: "var(--fg-faint)" }}>
 										{triggerDesc(a.trigger)}
 										{a.target.kind === "repo" ? " · 每 run 新 worktree" : " · 指定工作区"}
+										{a.dispatch === "router" ? " · Router 分派" : " · 直执"}
 										{a.reuseSession ? " · 复用会话" : ""}
 										{a.autoVerify ? " · 自动验证" : ""}
 									</div>
@@ -592,6 +594,18 @@ function AutomationEditor({
 						{modelOptions.map(([v, lbl]) => (
 							<option key={v} value={v}>{lbl}</option>
 						))}
+					</select>
+				</div>
+				<div className="min-w-0 flex-1">
+					<span className={label} style={labelStyle}>分派方式</span>
+					<select
+						className={field}
+						style={fieldStyle}
+						value={draft.dispatch ?? "direct"}
+						onChange={(e) => onChange({ ...draft, dispatch: e.target.value as "router" | "direct" })}
+					>
+						<option value="router">Router 拆解分派(Worker 池)</option>
+						<option value="direct">直执(单会话直接跑)</option>
 					</select>
 				</div>
 				<div style={{ width: 76 }}>
