@@ -37,6 +37,7 @@ import { ModelCatalog } from "./host/model-catalog";
 import { AutomationManager } from "./host/automation-manager";
 import { OrchestratorManager } from "./host/orchestrator";
 import { RaceManager } from "./host/race-manager";
+import { TaskManager } from "./host/task-manager";
 import { EventStore } from "./host/event-store";
 import { applyAutostart, launcherPath } from "./host/autostart";
 import { mapFilesToTests as mapTests } from "./host/test-runner";
@@ -320,6 +321,10 @@ bridge.register("spawn_worker", async (workspaceId, p) => {
 			speculative: p.speculative === true,
 			routerSessionId: p.__router,
 		});
+		// 任务卡归组(P3.3):同发起方未收口卡附加,否则新卡(聊天轮/Router 分派链路)
+		try {
+			tasks.attachWorker({ routerSessionId: p.__router, workerId: rec.id, objective: p.objective, workspaceId: rec.workspaceId, source: "chat" });
+		} catch { /* 卡域异常不阻塞委派 */ }
 		return brText(
 			rec.speculative
 				? `已委派投机 Worker ${rec.id}(隔离 worktree 静默修复;验证全绿才提交进评审队列,否则丢弃)。`
@@ -380,6 +385,10 @@ bridge.register("start_race", async (workspaceId, p) => {
 			timeoutMin: p.timeoutMin,
 			routerSessionId: p.__router,
 		});
+		try {
+			const race = races.get(raceId);
+			if (race) tasks.beginRace({ raceId, objective: race.objective, workspaceId: p.workspaceId || workspaceId, workerIds: race.entries.map((en) => en.workerId) });
+		} catch { /* 卡域异常不阻塞开赛 */ }
 		return brText(`竞赛 ${raceId} 已开赛(${(p.variants?.length ?? 3)} 路并行,隔离 worktree)。收束后自动评分,用户在竞赛面板人工选优;结果也会回喂本对话。`);
 	} catch (err: any) {
 		return brText(String(err?.message ?? err), true);
@@ -434,6 +443,7 @@ const emit = (raw: HostEvent) => {
 	logPump.handleHostEvent(e);
 	automations.handleHostEvent(e);
 	orchestrator.handleHostEvent(e);
+	tasks.handleHostEvent(e);
 };
 
 host.bindEmitter(emit);
@@ -493,6 +503,16 @@ const automations = new AutomationManager({
 });
 automations.bindEmitter(emit);
 automations.start();
+
+/* ---- 任务卡看板(P3.3):聚合 Worker 池/竞赛/自动化运行;兼 Worker 面板 ---- */
+const tasks = new TaskManager({
+	runtimeRoot: RUNTIME_ROOT,
+	getAutomation: (id) => automations.get(id),
+	getRace: (id) => races.get(id),
+});
+tasks.bindEmitter(emit);
+tasks.bindWorkerLookup((id) => orchestrator.get(id));
+orchestrator.onWorkerUpdate((rec) => tasks.onWorkerUpdate(rec));
 
 /* ==================== 请求处理(窗口本地项除外,全在此) ==================== */
 
@@ -1092,6 +1112,14 @@ const handlers = {
 		return { ok: true, workers: orchestrator.list() };
 	},
 
+	/* ---------- 任务卡看板(P3.3) ---------- */
+	"tasks.list": () => {
+		return { ok: true, tasks: tasks.list() };
+	},
+	"tasks.dismiss": ({ taskId }: any) => {
+		return tasks.dismiss(taskId);
+	},
+
 	/* ---------- 竞赛域(P3) ---------- */
 	"races.list": () => {
 		return { ok: true, races: races.list() };
@@ -1099,6 +1127,10 @@ const handlers = {
 	"races.start": async ({ objective, workspaceId, variants, timeoutMin, __router }: any) => {
 		try {
 			const raceId = await races.start({ objective, workspaceId, variants, timeoutMin, routerSessionId: __router });
+			try {
+				const race = races.get(raceId);
+				if (race) tasks.beginRace({ raceId, objective: race.objective, workspaceId, workerIds: race.entries.map((en) => en.workerId) });
+			} catch { /* 卡域异常不阻塞开赛 */ }
 			return { ok: true, raceId };
 		} catch (err: any) {
 			return { ok: false, error: String(err?.message ?? err) };

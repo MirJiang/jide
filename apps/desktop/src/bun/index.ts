@@ -268,6 +268,8 @@ const DAEMON_METHODS = [
 	"review.list",
 	"review.decide",
 	"review.enqueueCommit",
+	"tasks.list",
+	"tasks.dismiss",
 	"memory.status",
 	"memory.suggest",
 	"memory.decide",

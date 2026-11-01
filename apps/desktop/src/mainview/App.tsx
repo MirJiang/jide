@@ -9,6 +9,7 @@ import { connect } from "./rpc";
 import { TitleBar } from "./components/TitleBar";
 import { ActivityBar, SidebarPanel } from "./components/Sidebar";
 import { ChatPanel } from "./components/ChatPanel";
+import { KanbanBoard } from "./components/KanbanBoard";
 import { CodeEditor } from "./components/CodeEditor";
 import { DiffView } from "./components/DiffView";
 import { TerminalView } from "./components/TerminalView";
@@ -128,6 +129,11 @@ export default function App() {
 						<div className="absolute inset-0" style={{ display: s.activeTab === "chat" ? "block" : "none" }}>
 							<ChatPanel />
 						</div>
+						{s.tabs.some((t) => t.kind === "tasks") && (
+							<div className="absolute inset-0" style={{ display: s.activeTab === "tasks" ? "block" : "none" }}>
+								<KanbanBoard />
+							</div>
+						)}
 						{s.tabs.filter((t) => t.kind === "preview").map((t) => (
 							<div key="preview" className="absolute inset-0 flex flex-col" style={{ display: s.activeTab === "preview" ? "flex" : "none" }}>
 								<div className="flex items-center gap-2 px-3.5 py-1.5" style={{ background: "var(--bg1)", borderBottom: "1px solid var(--line)" }}>

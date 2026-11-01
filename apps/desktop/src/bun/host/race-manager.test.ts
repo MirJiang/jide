@@ -77,13 +77,14 @@ function makeDeps(opts: { scores?: number[]; workers?: number } = {}) {
 			scanTests: () => ["a.test.ts"],
 			gitStatus: async () => ({ ok: true, changes: [{ path: "a.ts" }] }),
 			mapTests: (_c: string[], all: string[]) => all,
-			// 按工作区名确定性判定:第 1 路(-1)pass,第 2 路(-2)fail
+			// 按工作区名确定性判定:第 1 路(-1 结尾)pass,第 2 路(-2 结尾)fail。
+			// 必须锚定结尾:race id hex 首字符可能恰为 "1"(1/16),includes("-1") 会误中第 2 路 → 偶发假绿。
 			async runTests(cwd: string) {
-				const pass = cwd.includes("-1");
+				const pass = /-1$/.test(cwd);
 				return { ok: true, selected: 1, total: 1, results: [{ status: pass ? "pass" : "fail" }] };
 			},
 			async runChecks(cwd: string) {
-				const pass = cwd.includes("-1");
+				const pass = /-1$/.test(cwd);
 				return { ok: true, results: [{ passed: pass, title: "c1" }] };
 			},
 		},

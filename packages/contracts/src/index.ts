@@ -156,6 +156,33 @@ export interface WorkerRecordView {
 	routerSessionId?: string;
 }
 
+/* ---------------- 任务卡看板(P3.3:HiFox 语义本地化,数据源=编排数据) ---------------- */
+
+/** 任务卡:聚合 Worker 池 / 竞赛 / 自动化运行的任务视图(daemon 运行期实体,tasks.json 落盘) */
+export interface OrchestrationTask {
+	id: string;
+	/** 卡面标题(目标首行 / 自动化名 / 竞赛前缀) */
+	title: string;
+	/** 完整任务目标 */
+	objective: string;
+	/** 来源:聊天委派 / 自动化 / 竞赛 / 手动 */
+	source: "chat" | "automation" | "race" | "manual";
+	status: "running" | "verifying" | "awaiting-review" | "done" | "failed" | "cancelled";
+	workspaceId?: string;
+	projectId?: string;
+	/** 归属 Worker ids(任务卡即 Worker 面板) */
+	workerIds: string[];
+	raceId?: string;
+	automationId?: string;
+	runId?: string;
+	/** 发起方会话 id(聊天轮归组 / Router 分派链路) */
+	routerSessionId?: string;
+	/** 卡面摘要(Worker 摘要 / 竞赛最高分 / 运行结论) */
+	summary?: string;
+	createdAt: number;
+	updatedAt: number;
+}
+
 /* ---------------- 竞赛域(P3:fan-out 一拖 N 对比选优) ---------------- */
 
 export interface RaceEntry {
@@ -353,6 +380,18 @@ export interface HostRequestShapes {
 	/** 取消运行中竞赛:中断 Worker + 清理 worktree */
 	"races.cancel": {
 		params: { raceId: string };
+		response: { ok: true } | { ok: false; error: string };
+	};
+
+	/* ---------------- 任务卡看板(P3.3:任务→Worker→验证→人收) ---------------- */
+
+	"tasks.list": {
+		params: {};
+		response: { ok: true; tasks: OrchestrationTask[] } | { ok: false; error: string };
+	};
+	/** 清理终态卡片 */
+	"tasks.dismiss": {
+		params: { taskId: string };
 		response: { ok: true } | { ok: false; error: string };
 	};
 
@@ -985,6 +1024,8 @@ export type HostEvent =
 	| { type: "automation.updated"; seq: number; automationId: string }
 	/** 自动化运行记录变化(排队/开始/结束;UI 实时刷新运行历史) */
 	| { type: "automation.run"; seq: number; run: AutomationRun }
+	/** 任务卡变化(P3.3:建卡/推进/收口/清理) */
+	| { type: "task.updated"; seq: number; taskId: string }
 	/** 竞赛状态变化(P3:开赛/收口/裁定) */
 	| { type: "race.updated"; seq: number; raceId: string }
 	/**
@@ -1069,6 +1110,7 @@ const EVENT_TYPES: ReadonlySet<string> = new Set<HostEventType>([
 	"automation.updated",
 	"automation.run",
 	"race.updated",
+	"task.updated",
 	"host.log",
 ]);
 

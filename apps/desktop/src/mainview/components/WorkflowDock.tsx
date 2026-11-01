@@ -28,6 +28,13 @@ export function WorkflowDock() {
 	const toggle = (k: "plan" | "review" | "auto" | "race") => setOpen((o) => ({ ...o, [k]: !o[k] }));
 	const anyOpen = open.plan || open.review || open.auto || open.race;
 	const racesAwaiting = s.races.filter((r) => r.status === "awaiting-review").length;
+	const openTasksCount = s.tasks.filter((t) => t.status === "running" || t.status === "verifying" || t.status === "awaiting-review").length;
+
+	// 任务卡初始拉取(后续靠 task.updated 事件刷新)
+	useEffect(() => {
+		void s.refreshTasks();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
 
 	return (
 		<div className="flex" style={{ flex: "0 0 auto" }}>
@@ -89,6 +96,19 @@ export function WorkflowDock() {
 					onClick={() => toggle("plan")}
 				>
 					☑
+				</button>
+				<button
+					title="任务看板 · 任务→Worker→验证→人收"
+					className="relative flex h-[38px] w-[38px] items-center justify-center rounded-lg"
+					style={{ color: openTasksCount > 0 ? "var(--acc)" : "var(--fg-faint)" }}
+					onClick={() => useIDE.getState().openTasks()}
+				>
+					<Icon name="ri-kanban-view-2" size={19} />
+					{openTasksCount > 0 && (
+						<span className="absolute right-0.5 top-0.5 rounded-full px-1 text-[9px] font-bold" style={{ background: "var(--acc)", color: "var(--bg0)" }}>
+							{openTasksCount}
+						</span>
+					)}
 				</button>
 				<button
 					title="竞赛 · 一拖 N 对比选优"

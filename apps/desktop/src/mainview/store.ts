@@ -11,6 +11,7 @@ import {
 	type Automation,
 	type AutomationRun,
 	type HostEvent,
+	type OrchestrationTask,
 	type Race,
 	type SessionStatus,
 	type JideSettings,
@@ -27,7 +28,7 @@ export interface ChatMessage {
 }
 
 export interface EditorTab {
-	kind: "chat" | "file" | "diff" | "preview";
+	kind: "chat" | "file" | "diff" | "preview" | "tasks";
 	/** file: 工作区相对路径 */
 	path?: string;
 	title: string;
@@ -162,6 +163,13 @@ interface IDEStore {
 	discardRace(raceId: string): Promise<void>;
 	cancelRace(raceId: string): Promise<void>;
 
+	/** 任务卡看板(P3.3:任务→Worker→验证→人收;兼 Worker 面板) */
+	tasks: OrchestrationTask[];
+	refreshTasks(): Promise<void>;
+	dismissTask(taskId: string): Promise<void>;
+	/** 打开任务看板页签 */
+	openTasks(): void;
+
 	/** 外部投递待办(终端/测试/评审 →「问 agent」):ChatPanel 消费后清空,填入输入框待用户确认发送 */
 	chatPrefill: string | null;
 	askAgent(source: string, contextText: string, question: string): Promise<void>;
@@ -211,7 +219,7 @@ interface IDEStore {
 }
 
 let nextMsgId = 1;
-const tabKey = (t: { kind: string; path?: string }) => (t.kind === "chat" ? "chat" : t.kind === "diff" ? "diff:" + t.path : t.path!);
+const tabKey = (t: { kind: string; path?: string }) => (t.kind === "chat" ? "chat" : t.kind === "diff" ? "diff:" + t.path : t.kind === "tasks" ? "tasks" : t.path!);
 
 export const useIDE = create<IDEStore>((set, get) => ({
 	client: null,
@@ -264,6 +272,7 @@ export const useIDE = create<IDEStore>((set, get) => ({
 	automations: [],
 	automationRuns: {},
 	races: [],
+	tasks: [],
 
 	async boot(client) {
 		set({ client });
@@ -663,6 +672,33 @@ export const useIDE = create<IDEStore>((set, get) => ({
 		await get().refreshRaces();
 	},
 
+	async refreshTasks() {
+		const { client } = get();
+		if (!client) return;
+		const r = await client.request("tasks.list", {});
+		if (r.ok) set({ tasks: r.tasks });
+	},
+
+	async dismissTask(taskId) {
+		const { client } = get();
+		if (!client) return;
+		const r = await client.request("tasks.dismiss", { taskId });
+		if (r.ok) {
+			set((s) => ({ tasks: s.tasks.filter((t) => t.id !== taskId) }));
+		} else {
+			set((s) => ({ logs: [...s.logs, `清理任务卡失败:${r.error}`] }));
+		}
+	},
+
+	openTasks() {
+		const { tabs } = get();
+		if (!tabs.some((t) => t.kind === "tasks")) {
+			set({ tabs: [...tabs, { kind: "tasks", title: "任务看板" }] });
+		}
+		set({ activeTab: "tasks" });
+		void get().refreshTasks();
+	},
+
 	async rebuild() {
 		const { client, chat } = get();
 		if (!client || !chat.sessionId) return;
@@ -887,6 +923,9 @@ export const useIDE = create<IDEStore>((set, get) => ({
 			}
 			case "race.updated":
 				void get().refreshRaces();
+				break;
+			case "task.updated":
+				void get().refreshTasks();
 				break;
 			case "agent.ui.request":
 				// pi 扩展 UI 请求:dialog 入待办卡片;notify 直落日志流(火后不管)
