@@ -27,6 +27,8 @@ export default {
 			"dist/assets": "views/mainview/assets",
 			// pi 进程内扩展(jiti 直接跑 TS,宿主经 -e 传给 pi)
 			"src/bun/host/extensions": "jide-extensions",
+			// daemon 常驻宿主(bun build --target=bun 单文件;运行时用 bin/cottontail.exe 执行)
+			"dist-daemon/jide-daemon.js": "jide-daemon.js",
 		},
 		watchIgnore: ["dist/**", "build/**"],
 		win: { bundleCEF: false },

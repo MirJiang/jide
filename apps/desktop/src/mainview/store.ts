@@ -8,6 +8,8 @@ import { create } from "zustand";
 import {
 	PROTOCOL_VERSION,
 	parseModelKey,
+	type Automation,
+	type AutomationRun,
 	type HostEvent,
 	type SessionStatus,
 	type JideSettings,
@@ -140,6 +142,14 @@ interface IDEStore {
 	/** 切换当前会话模型(pi set_model 即时生效) */
 	setSessionModel(provider: string, modelId: string): Promise<void>;
 
+	/** 自动化任务(P1.5):列表 + 运行历史(automation.run 事件实时更新) */
+	automations: Automation[];
+	automationRuns: Record<string, AutomationRun[]>;
+	refreshAutomations(): Promise<void>;
+	saveAutomation(a: Automation): Promise<string | null>;
+	deleteAutomation(id: string): Promise<void>;
+	runAutomation(id: string): Promise<void>;
+
 	/** 外部投递待办(终端/测试/评审 →「问 agent」):ChatPanel 消费后清空,填入输入框待用户确认发送 */
 	chatPrefill: string | null;
 	askAgent(source: string, contextText: string, question: string): Promise<void>;
@@ -237,6 +247,8 @@ export const useIDE = create<IDEStore>((set, get) => ({
 	modelCatalog: [],
 	modelCatalogLoading: false,
 	chatPrefill: null,
+	automations: [],
+	automationRuns: {},
 
 	async boot(client) {
 		set({ client });
@@ -543,6 +555,38 @@ export const useIDE = create<IDEStore>((set, get) => ({
 		}
 	},
 
+	async refreshAutomations() {
+		const { client } = get();
+		if (!client) return;
+		const r = await client.request("automations.list", {});
+		if (r.ok) set({ automations: r.automations, automationRuns: r.runs });
+	},
+
+	async saveAutomation(a) {
+		const { client } = get();
+		if (!client) return "未连接宿主";
+		const r = await client.request("automations.save", { automation: a });
+		if (r.ok) {
+			await get().refreshAutomations();
+			return null;
+		}
+		return r.error;
+	},
+
+	async deleteAutomation(id) {
+		const { client } = get();
+		if (!client) return;
+		await client.request("automations.delete", { id });
+		await get().refreshAutomations();
+	},
+
+	async runAutomation(id) {
+		const { client } = get();
+		if (!client) return;
+		const r = await client.request("automations.run", { id });
+		if (!r.ok) set((s) => ({ logs: [...s.logs, `自动化启动失败:${r.error}`] }));
+	},
+
 	async rebuild() {
 		const { client, chat } = get();
 		if (!client || !chat.sessionId) return;
@@ -750,6 +794,21 @@ export const useIDE = create<IDEStore>((set, get) => ({
 			case "memory.updated":
 				set({ memoryBudget: event.budget });
 				break;
+			case "automation.updated":
+				void get().refreshAutomations();
+				break;
+			case "automation.run": {
+				// 运行记录实时更新(queued/running/终态),不整表重拉
+				const run = event.run;
+				set((st) => {
+					const list = [...(st.automationRuns[run.automationId] ?? [])];
+					const i = list.findIndex((r) => r.id === run.id);
+					if (i >= 0) list[i] = run;
+					else list.unshift(run);
+					return { automationRuns: { ...st.automationRuns, [run.automationId]: list.slice(0, 50) } };
+				});
+				break;
+			}
 			case "agent.ui.request":
 				// pi 扩展 UI 请求:dialog 入待办卡片;notify 直落日志流(火后不管)
 				if (event.method === "notify") {

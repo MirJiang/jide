@@ -51,7 +51,15 @@ if (!ready) {
 }
 console.log(`[dev-hmr] vite ready on :${VITE_PORT},launching electrobun dev…`);
 
-// 3) electrobun:prepare → 补丁 exe 图标(prepare 会重抽取 exe,补丁必须在其后)→ run
+// 3) electrobun:prepare(需 daemon bundle 先产出,config copy 依赖)→ 补丁 exe 图标 → run
+const daemonBuild = Bun.spawnSync([process.execPath, "build", join(root, "src", "bun", "daemon.ts"), "--target=bun", "--outfile", join(root, "dist-daemon", "jide-daemon.js")], {
+	cwd: root, stdout: "inherit", stderr: "inherit",
+});
+if (daemonBuild.exitCode !== 0) {
+	console.error("[dev-hmr] daemon bundle 构建失败");
+	vite.kill();
+	process.exit(1);
+}
 const prep = Bun.spawnSync(["hutch", "electrobun", "prepare"], {
 	cwd: root, stdout: "inherit", stderr: "inherit", env: { ...process.env, DASH_RELEASE_OFFLINE: "1" },
 });

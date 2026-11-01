@@ -931,10 +931,16 @@ const EVENT_TYPES: ReadonlySet<string> = new Set<HostEventType>([
 	"host.log",
 ]);
 
+/** 事件类型守卫(不含 seq 校验):服务侧发出原始事件(无 seq)时的最低限度校验 */
+export function isHostEventType(type: unknown): type is HostEventType {
+	return typeof type === "string" && EVENT_TYPES.has(type);
+}
+
+/** 线上事件守卫(type + seq 齐全;接收侧用) */
 export function isHostEvent(value: unknown): value is HostEvent {
 	if (typeof value !== "object" || value === null) return false;
 	const v = value as Record<string, unknown>;
-	return typeof v.type === "string" && EVENT_TYPES.has(v.type) && typeof v.seq === "number";
+	return isHostEventType(v.type) && typeof v.seq === "number";
 }
 
 /** UI 侧事件分发器 */

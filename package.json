@@ -14,9 +14,10 @@
 		"desktop:view": "cd apps/desktop && bunx vite build",
 		"desktop:dev": "cd apps/desktop && DASH_RELEASE_OFFLINE=1 hutch electrobun dev",
 		"desktop:hmr": "cd apps/desktop && bun scripts/dev-hmr.mjs",
-		"desktop:build": "cd apps/desktop && bunx vite build && DASH_RELEASE_OFFLINE=1 hutch electrobun build",
+		"desktop:build": "cd apps/desktop && bunx vite build && bun run daemon:build && DASH_RELEASE_OFFLINE=1 hutch electrobun build",
 		"tokens:generate": "bun packages/jide-ui/scripts/generate-tokens.mjs",
-		"desktop": "bun run desktop:view && bun run desktop:dev"
+		"desktop": "bun run desktop:view && bun run desktop:dev",
+		"daemon:build": "cd apps/desktop && bun build src/bun/daemon.ts --target=bun --outfile dist-daemon/jide-daemon.js"
 	},
 	"devDependencies": {
 		"typescript": "~5.9.3"
