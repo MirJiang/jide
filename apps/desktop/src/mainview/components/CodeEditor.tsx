@@ -17,12 +17,12 @@ import { useIDE } from "../store";
 
 const theme = EditorView.theme(
 	{
-		"&": { height: "100%", backgroundColor: "var(--bg0)", color: "#c8cede", fontSize: "12.5px" },
+		"&": { height: "100%", backgroundColor: "var(--bg0)", color: "var(--fg)" },
 		".cm-gutters": { backgroundColor: "var(--bg0)", color: "var(--fg-faint)", border: "none" },
-		".cm-activeLine": { backgroundColor: "rgba(110,168,254,.06)" },
-		".cm-activeLineGutter": { backgroundColor: "rgba(110,168,254,.08)", color: "var(--fg)" },
+		".cm-activeLine": { backgroundColor: "rgba(62,207,142,.06)" },
+		".cm-activeLineGutter": { backgroundColor: "rgba(62,207,142,.08)", color: "var(--fg)" },
 		".cm-content": { fontFamily: '"Cascadia Code","JetBrains Mono",Consolas,monospace', lineHeight: 1.65 },
-		".cm-selectionBackground, ::selection": { backgroundColor: "rgba(110,168,254,.25)" },
+		".cm-selectionBackground, ::selection": { backgroundColor: "rgba(62,207,142,.25)" },
 		".cm-cursor": { borderLeftColor: "var(--acc)", borderLeftWidth: 2 },
 	},
 	{ dark: true },
@@ -43,6 +43,8 @@ export function CodeEditor({ path, content }: { path: string; content: string })
 	const viewRef = useRef<EditorView | null>(null);
 	const markDirty = useIDE((s) => s.markDirty);
 	const saveActiveTab = useIDE((s) => s.saveActiveTab);
+	// 字号来自设置(CM 根元素继承,改字号无需重建编辑器)
+	const editorFontSize = useIDE((s) => s.settings?.editorFontSize ?? 12.5);
 	const langComp = useRef(new Compartment());
 
 	useEffect(() => {
@@ -90,5 +92,5 @@ export function CodeEditor({ path, content }: { path: string; content: string })
 		}
 	}, [content]);
 
-	return <div ref={hostRef} className="h-full overflow-hidden" />;
+	return <div ref={hostRef} className="h-full overflow-hidden" style={{ fontSize: `${editorFontSize}px` }} />;
 }

@@ -8,21 +8,25 @@
 
 @import "tailwindcss";
 
-/* 设计令牌:对齐冻结原型(暗色 IDE) */
+/* 设计令牌:石墨底 + 祖母绿主色(与 tokens.src.json 保持一致,别名见下方) */
 :root {
-	--bg0: #0e1015;
-	--bg1: #14171f;
-	--bg2: #1a1e29;
-	--bg3: #222735;
-	--line: #262b3a;
-	--fg: #d7dbe6;
-	--fg-dim: #8b93a8;
-	--fg-faint: #5c6478;
-	--acc: #6ea8fe;
-	--acc-dim: #3d5a8a;
+	--bg0: #0c0e10;
+	--bg1: #121518;
+	--bg2: #181d21;
+	--bg3: #21272c;
+	--line: #262d32;
+	--fg: #dadfe3;
+	--fg-dim: #8e98a0;
+	--fg-faint: #606a72;
+	--acc: #3ecf8e;
+	--acc-dim: #1d4a37;
+	--acc-line: #2f7f5c;
+	--acc-text: #d9f7e8;
 	--green: #4ade80;
+	--green-bg: rgba(74, 222, 128, 0.12);
 	--red: #f87171;
 	--yellow: #facc15;
+	--yellow-bg: rgba(250, 204, 21, 0.12);
 	--purple: #c4b5fd;
 }
 
@@ -40,12 +44,78 @@ body {
 	font-size: 13px;
 }
 
+/* ============ 全局交互质感(图标 / 焦点 / 悬停) ============ */
+/* remixicon 基线:与文本对齐、默认字号随容器 */
+i[class^="ri-"],
+i[class*=" ri-"] {
+	line-height: 1;
+	vertical-align: -0.125em;
+	flex: none;
+}
+
+/* 控件统一过渡 */
+button,
+input,
+select,
+textarea {
+	transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease, opacity 0.12s ease;
+}
+
+/* 焦点态:令牌化主色描边(覆盖内联 borderColor) */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+	border-color: var(--acc-line) !important;
+	box-shadow: 0 0 0 2px rgba(62, 207, 142, 0.15);
+	outline: none;
+}
+
+/* 主按钮(JIDE 主色,替代散落的内联样式) */
+.jide-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	border-radius: 7px;
+	border: 1px solid var(--acc-line);
+	background: var(--acc-dim);
+	color: var(--acc-text);
+	font-weight: 500;
+}
+.jide-btn:hover {
+	background: #245842;
+	border-color: var(--acc);
+}
+.jide-btn:disabled {
+	opacity: 0.4;
+}
+
+/* 次按钮(中性) */
+.jide-btn-ghost {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	border-radius: 7px;
+	border: 1px solid var(--line);
+	background: transparent;
+	color: var(--fg-dim);
+}
+.jide-btn-ghost:hover {
+	background: var(--bg2);
+	color: var(--fg);
+	border-color: var(--line2);
+}
+.jide-btn-ghost:disabled {
+	opacity: 0.4;
+}
+
 ::-webkit-scrollbar {
 	width: 9px;
 	height: 9px;
 }
 ::-webkit-scrollbar-thumb {
-	background: #2c3242;
+	background: var(--bg3);
 	border-radius: 5px;
 	border: 2px solid var(--bg1);
 }
@@ -75,7 +145,9 @@ body {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	width: 40px;
+	width: 42px;
+	height: 30px;
+	border-radius: 7px;
 	color: var(--fg-dim);
 	font-size: 11px;
 	transition: background 0.12s ease, color 0.12s ease;
@@ -103,6 +175,37 @@ body {
 	--fg-faint: var(--jide-color-fg-faint);
 	--acc: var(--jide-color-acc);
 	--acc-dim: var(--jide-color-acc-dim);
+	--acc-line: var(--jide-color-acc-line);
+	--acc-text: var(--jide-color-acc-text);
+	--green: var(--jide-color-green);
+	--red: var(--jide-color-red);
+	--yellow: var(--jide-color-yellow);
+	--purple: var(--jide-color-purple);
+	--orange: var(--jide-color-orange);
+}
+
+/* 浅色主题(数据主题由 App 按 settings.theme + 系统偏好写入 html[data-theme]) */
+[data-theme="light"] {
+	--bg0: #f5f6f8;
+	--bg1: #ffffff;
+	--bg2: #eef1f4;
+	--bg3: #e2e8ec;
+	--line: #d8dee3;
+	--line2: #c3ccd3;
+	--fg: #1d242b;
+	--fg-dim: #556069;
+	--fg-faint: #8b959e;
+	--acc: #14a56d;
+	--acc-dim: #d9f3e6;
+	--acc-line: #8fd9b6;
+	--acc-text: #135239;
+	--green: #16a34a;
+	--green-bg: rgba(22, 163, 74, 0.12);
+	--red: #dc2626;
+	--yellow: #ca8a04;
+	--yellow-bg: rgba(202, 138, 4, 0.14);
+	--purple: #7c3aed;
+	--orange: #ea580c;
 	--green: var(--jide-color-green);
 	--red: var(--jide-color-red);
 	--yellow: var(--jide-color-yellow);

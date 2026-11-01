@@ -66,7 +66,7 @@ export function TestPanel() {
 					onClick={() => void run()}
 					disabled={running || !s.activeWorkspaceId}
 					className="rounded border px-2.5 py-0.5 disabled:opacity-40"
-					style={{ borderColor: "#4a6db3", background: "var(--acc-dim)", color: "#dbe7ff" }}
+					style={{ borderColor: "var(--acc-line)", background: "var(--acc-dim)", color: "var(--acc-text)" }}
 				>
 					{running ? "运行中…" : "运行"}
 				</button>
@@ -98,7 +98,7 @@ export function TestPanel() {
 								<pre className="max-h-24 overflow-auto whitespace-pre-wrap">{r.message}</pre>
 								<button
 									className="mt-1 rounded border px-2 py-0.5 text-[11px]"
-									style={{ borderColor: "#4a6db3", background: "var(--acc-dim)", color: "#dbe7ff" }}
+									style={{ borderColor: "var(--acc-line)", background: "var(--acc-dim)", color: "var(--acc-text)" }}
 									onClick={() => void s.askAgent("test", `${r.file} · ${r.name} 失败:${r.message?.slice(0, 300)}`, "这个失败为什么发生?")}
 								>
 									✦ 问 agent:这次失败为什么?
@@ -161,7 +161,7 @@ export function ChecksPanel() {
 					onClick={() => void run()}
 					disabled={running || !s.activeWorkspaceId}
 					className="rounded border px-2.5 py-0.5 disabled:opacity-40"
-					style={{ borderColor: "#4a6db3", background: "var(--acc-dim)", color: "#dbe7ff" }}
+					style={{ borderColor: "var(--acc-line)", background: "var(--acc-dim)", color: "var(--acc-text)" }}
 				>
 					{running ? "复验中…" : "一键复验"}
 				</button>

@@ -169,7 +169,7 @@ export function DiffView({ path }: { path: string }) {
 					</button>
 					<button
 						className="ml-2 rounded border px-2 py-0.5"
-						style={{ borderColor: "#4a6db3", background: "var(--acc-dim)", color: "#dbe7ff" }}
+						style={{ borderColor: "var(--acc-line)", background: "var(--acc-dim)", color: "var(--acc-text)" }}
 						title="把右侧(含中缝应用结果)写回文件"
 						onClick={() => void saveRight()}
 					>

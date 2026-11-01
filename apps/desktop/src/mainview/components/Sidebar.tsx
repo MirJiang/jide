@@ -67,7 +67,7 @@ function FileTree() {
 						className="flex w-full items-center gap-1.5 rounded px-2 py-[3px] text-left text-xs hover:bg-[var(--bg2)]"
 						style={{
 							paddingLeft: 8 + depth * 14 + 14,
-							color: s.activeTab === rel ? "#dbe7ff" : "var(--fg-dim)",
+							color: s.activeTab === rel ? "var(--acc-text)" : "var(--fg-dim)",
 							background: s.activeTab === rel ? "var(--acc-dim)" : undefined,
 						}}
 						onClick={() => void s.openFile(rel)}
@@ -147,10 +147,10 @@ export function ActivityBar() {
 	const setSidebar = useIDE((s) => s.setSidebar);
 	const changes = useIDE((s) => s.git.changes.length);
 	const items: Array<{ id: typeof sidebar; label: string; icon: string; badge?: number }> = [
-		{ id: "files", label: "资源管理器", icon: "◧" },
-		{ id: "search", label: "搜索", icon: "⌕" },
-		{ id: "git", label: "源代码管理", icon: "⎇", badge: changes || undefined },
-		{ id: "memory", label: "记忆(M4)", icon: "▤" },
+		{ id: "files", label: "资源管理器", icon: "ri-folder-open-line" },
+		{ id: "search", label: "搜索", icon: "ri-search-line" },
+		{ id: "git", label: "源代码管理", icon: "ri-git-branch-line", badge: changes || undefined },
+		{ id: "memory", label: "记忆(M4)", icon: "ri-brain-line" },
 	];
 	return (
 		<nav
@@ -161,18 +161,18 @@ export function ActivityBar() {
 				<button
 					key={it.id}
 					title={it.label}
-					className="relative flex h-[38px] w-[38px] items-center justify-center rounded-lg"
+					className="relative flex h-[38px] w-[38px] items-center justify-center rounded-lg hover:bg-[var(--bg2)]"
 					style={{
 						color: sidebar === it.id ? "var(--acc)" : "var(--fg-faint)",
 						background: sidebar === it.id ? "var(--bg2)" : undefined,
 					}}
 					onClick={() => setSidebar(it.id)}
 				>
-					<span className="text-lg leading-none">{it.icon}</span>
+					<i className={`${it.icon} text-[19px] leading-none`} aria-hidden />
 					{it.badge ? (
 						<span
 							className="absolute right-1 top-1 rounded-full px-1 text-[9px] font-bold"
-							style={{ background: "var(--acc)", color: "#0d1420", minWidth: 14 }}
+							style={{ background: "var(--acc)", color: "#0c0e10", minWidth: 14 }}
 						>
 							{it.badge}
 						</span>

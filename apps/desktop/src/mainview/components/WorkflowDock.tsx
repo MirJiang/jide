@@ -1,4 +1,4 @@
-/** 右侧工作流停靠:计划 | 评审队列(W6 人工门禁)双面板 + 最右窄菜单 */
+/** 右侧工作流停靠:计划 | 评审队列(W6 人工门禁)独立面板,各自展开/收起 + 最右窄菜单 */
 
 import { useEffect, useState } from "react";
 import { useIDE } from "../store";
@@ -14,51 +14,63 @@ interface ReviewItemView {
 }
 
 export function WorkflowDock() {
-	const [tab, setTab] = useState<"plan" | "review">("plan");
+	// 两个面板独立开关:窄条按钮或标题行 × 均可 toggle,互不挤占
+	const [open, setOpen] = useState<{ plan: boolean; review: boolean }>({ plan: true, review: false });
 	const s = useIDE();
 	const pending = s.reviewPending;
+	const toggle = (k: "plan" | "review") => setOpen((o) => ({ ...o, [k]: !o[k] }));
+	const anyOpen = open.plan || open.review;
 
 	return (
 		<div className="flex" style={{ flex: "0 0 auto" }}>
-			<aside className="flex w-[290px] flex-col" style={{ background: "var(--bg1)", borderLeft: "1px solid var(--line)" }}>
-				<div
-					className="flex h-[34px] items-center gap-1 px-2 text-[11px] font-semibold"
-					style={{ letterSpacing: 1, color: "var(--fg-dim)" }}
-				>
-					<button
-						className="rounded px-2 py-1"
-						style={{ background: tab === "plan" ? "var(--bg3)" : undefined, color: tab === "plan" ? "var(--fg)" : "var(--fg-faint)" }}
-						onClick={() => setTab("plan")}
-					>
-						计划
-					</button>
-					<button
-						className="rounded px-2 py-1"
-						style={{ background: tab === "review" ? "var(--bg3)" : undefined, color: tab === "review" ? "var(--fg)" : "var(--fg-faint)" }}
-						onClick={() => setTab("review")}
-					>
-						评审{pending > 0 && <span className="ml-1 rounded-full px-1.5 text-[9px] font-bold" style={{ background: "var(--red-bg)", color: "var(--red)" }}>{pending}</span>}
-					</button>
-				</div>
-				<div className="flex-1 overflow-y-auto">
-					{tab === "plan" ? <PlanDockInner /> : <ReviewPanel />}
-				</div>
-			</aside>
-			{/* 最右窄菜单(原型 rail2) */}
+			{anyOpen && (
+				<aside className="flex w-[290px] min-w-0 flex-col" style={{ background: "var(--bg1)", borderLeft: "1px solid var(--line)" }}>
+					{open.plan && (
+						<section
+							className="flex min-h-0 flex-1 flex-col"
+							style={{ borderBottom: open.review ? "1px solid var(--line)" : undefined }}
+						>
+							<PlanDockInner onClose={() => toggle("plan")} />
+						</section>
+					)}
+					{open.review && (
+						<section className="flex min-h-0 flex-1 flex-col">
+							<div
+								className="flex h-[34px] flex-none items-center gap-1 px-3 text-[11px] font-semibold"
+								style={{ letterSpacing: 1.5, color: "var(--fg-dim)" }}
+							>
+								评审队列{pending > 0 ? `(${pending})` : ""}
+								<button
+									title="收起"
+									className="ml-auto flex h-5 w-5 items-center justify-center rounded hover:bg-[var(--bg2)]"
+									style={{ color: "var(--fg-faint)" }}
+									onClick={() => toggle("review")}
+								>
+									×
+								</button>
+							</div>
+							<div className="min-h-0 flex-1 overflow-y-auto">
+								<ReviewPanel />
+							</div>
+						</section>
+					)}
+				</aside>
+			)}
+			{/* 最右窄菜单(原型 rail2):点谁展开谁,再点收起 */}
 			<nav className="flex w-[46px] flex-col items-center gap-1 pt-1.5" style={{ background: "var(--bg1)", borderLeft: "1px solid var(--line)" }}>
 				<button
 					title="计划 · 当前 todo"
 					className="relative flex h-[38px] w-[38px] items-center justify-center rounded-lg text-lg"
-					style={{ color: tab === "plan" ? "var(--acc)" : "var(--fg-faint)", background: tab === "plan" ? "var(--bg2)" : undefined }}
-					onClick={() => setTab("plan")}
+					style={{ color: open.plan ? "var(--acc)" : "var(--fg-faint)", background: open.plan ? "var(--bg2)" : undefined }}
+					onClick={() => toggle("plan")}
 				>
 					☑
 				</button>
 				<button
 					title="评审队列"
 					className="relative flex h-[38px] w-[38px] items-center justify-center rounded-lg text-lg"
-					style={{ color: tab === "review" ? "var(--acc)" : "var(--fg-faint)", background: tab === "review" ? "var(--bg2)" : undefined }}
-					onClick={() => setTab("review")}
+					style={{ color: open.review ? "var(--acc)" : "var(--fg-faint)", background: open.review ? "var(--bg2)" : undefined }}
+					onClick={() => toggle("review")}
 				>
 					✓
 					{pending > 0 && (

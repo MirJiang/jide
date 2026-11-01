@@ -5,7 +5,14 @@
  */
 
 import { create } from "zustand";
-import type { HostEvent, SessionStatus } from "@jide/contracts";
+import {
+	PROTOCOL_VERSION,
+	parseModelKey,
+	type HostEvent,
+	type SessionStatus,
+	type JideSettings,
+	type PiModelInfo,
+} from "@jide/contracts";
 import type { JideClient } from "./rpc";
 
 export interface ChatMessage {
@@ -54,15 +61,22 @@ interface IDEStore {
 	client: JideClient | null;
 	connected: boolean;
 	hostName: string;
-	demo: boolean;
 
 	project: ProjectView | null;
 	workspaces: WorkspaceView[];
 	activeWorkspaceId: string | null;
+	/** 项目对话框:null=关闭;"trust"=信任确认(打开项目走标题栏下拉,不再弹窗) */
+	projectDialog: "trust" | null;
+	/** 标题栏「项目」下拉菜单开关 */
+	projectMenuOpen: boolean;
 
 	sidebar: "files" | "search" | "git" | "memory";
 	bottomVisible: boolean;
 	bottomTab: "terminal" | "tests" | "checks";
+
+	/** 全局设置(宿主持久化);启动时拉取,保存走 saveSettings */
+	settings: JideSettings | null;
+	settingsOpen: boolean;
 
 	tabs: EditorTab[];
 	activeTab: string; // "chat" 或 file path
@@ -104,13 +118,42 @@ interface IDEStore {
 	memorySuggestions: Array<{ suggestionId: string; file: string; lines: string[]; reason: string }>;
 	devserver: { state: string; url: string | null; probeMode: string };
 
+	/** pi 扩展 UI 请求待办(agent.ui.request;dialog 类须用户回答,notify 类可关闭) */
+	uiRequests: Array<{
+		sessionId: string;
+		requestId: string;
+		method: "select" | "confirm" | "input" | "editor" | "notify";
+		title?: string;
+		options?: string[];
+		message?: string;
+		prefill?: string;
+		notifyType?: "info" | "warning" | "error";
+	}>;
+	/** 回复 pi 扩展 UI 请求并移除卡片 */
+	respondUI(requestId: string, resp: { value?: string; confirmed?: boolean; cancelled?: boolean }): Promise<void>;
+
+	/** pi 模型目录(get_available_models 缓存投影;空 = 尚未拉取) */
+	modelCatalog: PiModelInfo[];
+	modelCatalogLoading: boolean;
+	/** 拉取模型目录(宿主缓存 5min;force 重拉临时 pi 进程) */
+	refreshModels(force?: boolean): Promise<void>;
+	/** 切换当前会话模型(pi set_model 即时生效) */
+	setSessionModel(provider: string, modelId: string): Promise<void>;
+
+	/** 外部投递待办(终端/测试/评审 →「问 agent」):ChatPanel 消费后清空,填入输入框待用户确认发送 */
+	chatPrefill: string | null;
 	askAgent(source: string, contextText: string, question: string): Promise<void>;
 	runTier(tier: "agent" | "human" | "cdp"): Promise<void>;
 	refreshReview(): Promise<void>;
 
 	boot(client: JideClient): Promise<void>;
-	openProject(path: string): Promise<void>;
+	openProject(path: string): Promise<boolean>;
 	trustProject(): Promise<void>;
+	showProjectDialog(): void;
+	setProjectMenuOpen(v: boolean): void;
+	closeProjectDialog(): void;
+	setSettingsOpen(v: boolean): void;
+	saveSettings(patch: Partial<JideSettings>): Promise<void>;
 	switchWorkspace(id: string): Promise<void>;
 	createWorktree(name: string): Promise<void>;
 
@@ -150,15 +193,19 @@ export const useIDE = create<IDEStore>((set, get) => ({
 	client: null,
 	connected: false,
 	hostName: "",
-	demo: false,
 
 	project: null,
 	workspaces: [],
 	activeWorkspaceId: null,
+	projectDialog: null,
+	projectMenuOpen: false,
 
 	sidebar: "files",
 	bottomVisible: true,
 	bottomTab: "terminal",
+
+	settings: null,
+	settingsOpen: false,
 
 	tabs: [{ kind: "chat", title: "Agent 对话" }],
 	activeTab: "chat",
@@ -186,27 +233,36 @@ export const useIDE = create<IDEStore>((set, get) => ({
 	memoryBudget: { projectK: 0, userK: 0, sessionK: 0, totalK: 0, capK: 2, nearLimit: false },
 	memorySuggestions: [],
 	devserver: { state: "stopped", url: null, probeMode: "auto" },
+	uiRequests: [],
+	modelCatalog: [],
+	modelCatalogLoading: false,
+	chatPrefill: null,
 
 	async boot(client) {
 		set({ client });
-		const hello = await client.request("app.hello", { protocolVersion: 1 });
+		const hello = await client.request("app.hello", { protocolVersion: PROTOCOL_VERSION });
 		if (!hello.ok) {
 			set((s) => ({ logs: [...s.logs, `协议协商失败:${hello.error}`] }));
 			return;
 		}
-		set({ connected: true, hostName: hello.host, demo: hello.demo });
+		set({ connected: true, hostName: hello.host });
+		// 全局设置(字号/shell/devserver 默认参数)
+		const st = await client.request("settings.get", {});
+		if (st.ok) set({ settings: st.settings });
 	},
 
 	async openProject(path) {
 		const { client, workspaces } = get();
-		if (!client) return;
+		if (!client) return false;
 		const r = await client.request("project.open", { path });
 		if (!r.ok) {
 			set((s) => ({ logs: [...s.logs, `打开项目失败:${r.error}`] }));
-			return;
+			return false;
 		}
 		set({
 			project: { id: r.projectId, root: r.root, name: r.name, trusted: r.trusted, branch: r.branch },
+			// 首次打开 → 弹信任确认;曾信任过的项目 → 直接进入
+			projectDialog: r.trusted ? null : "trust",
 		});
 		const list = await client.request("workspace.list", { projectId: r.projectId });
 		if (list.ok) {
@@ -220,7 +276,6 @@ export const useIDE = create<IDEStore>((set, get) => ({
 			// 初始会话挂到当前工作区
 			const created = await client.request("session.create", {
 				workspacePath: wss.find((w) => w.id === list.activeWorkspaceId)?.path ?? "",
-				demoMode: get().demo,
 			});
 			if (created.ok) {
 				set((s) => ({
@@ -238,13 +293,43 @@ export const useIDE = create<IDEStore>((set, get) => ({
 			}
 		}
 		void get().refreshGit();
+		return true;
 	},
 
 	async trustProject() {
 		const { client, project } = get();
 		if (!client || !project) return;
 		const r = await client.request("project.trust", { projectId: project.id });
-		if (r.ok) set((s) => ({ project: s.project ? { ...s.project, trusted: true } : s.project }));
+		if (r.ok) set((s) => ({ project: s.project ? { ...s.project, trusted: true } : s.project, projectDialog: null }));
+	},
+
+	showProjectDialog() {
+		// 仅用于信任确认(未信任项目);打开/切换项目走标题栏下拉
+		set({ projectDialog: "trust" });
+	},
+
+	setProjectMenuOpen(v: boolean) {
+		set({ projectMenuOpen: v });
+	},
+
+	closeProjectDialog() {
+		set({ projectDialog: null });
+	},
+
+	setSettingsOpen(v: boolean) {
+		set({ settingsOpen: v });
+	},
+
+	/** 部分更新设置(宿主合并持久化) */
+	async saveSettings(patch) {
+		const { client } = get();
+		if (!client) return;
+		const r = await client.request("settings.set", { patch });
+		if (!r.ok) {
+			set((s) => ({ logs: [...s.logs, `设置保存失败:${r.error}`] }));
+			return;
+		}
+		set({ settings: r.settings });
 	},
 
 	async switchWorkspace(id) {
@@ -264,7 +349,6 @@ export const useIDE = create<IDEStore>((set, get) => ({
 		const ws = get().workspaces.find((w) => w.id === id);
 		const created = await client.request("session.create", {
 			workspacePath: ws?.path ?? "",
-			demoMode: get().demo,
 		});
 		if (created.ok) {
 			set((s) => ({
@@ -424,11 +508,48 @@ export const useIDE = create<IDEStore>((set, get) => ({
 		if (!r.ok) set((s) => ({ logs: [...s.logs, `停止失败:${r.error}`] }));
 	},
 
+	async respondUI(requestId, resp) {
+		const { client, chat } = get();
+		const pending = get().uiRequests.find((u) => u.requestId === requestId);
+		if (!client || !pending) return;
+		// 乐观移除(重复点击不再二次回写)
+		set((s) => ({ uiRequests: s.uiRequests.filter((u) => u.requestId !== requestId) }));
+		const sessionId = pending.sessionId || chat.sessionId;
+		if (!sessionId) return;
+		const r = await client.request("session.respondUI", { sessionId, requestId, ...resp });
+		if (!r.ok) set((s) => ({ logs: [...s.logs, `扩展请求回复失败:${r.error}`] }));
+	},
+
+	async refreshModels(force) {
+		const { client } = get();
+		if (!client || get().modelCatalogLoading) return;
+		set({ modelCatalogLoading: true });
+		const r = await client.request("models.list", { refresh: force === true });
+		if (r.ok) set({ modelCatalog: r.models, modelCatalogLoading: false });
+		else {
+			set({ modelCatalogLoading: false });
+			set((s) => ({ logs: [...s.logs, `模型目录获取失败:${r.error}`] }));
+		}
+	},
+
+	async setSessionModel(provider, modelId) {
+		const { client, chat } = get();
+		if (!client || !chat.sessionId) return;
+		const r = await client.request("session.setModel", { sessionId: chat.sessionId, provider, modelId });
+		if (r.ok) {
+			set((s) => ({ chat: { ...s.chat, modelLabel: r.modelLabel } }));
+		} else {
+			set((s) => ({ logs: [...s.logs, `模型切换失败:${r.error}`] }));
+		}
+	},
+
 	async rebuild() {
 		const { client, chat } = get();
 		if (!client || !chat.sessionId) return;
 		const r = await client.request("session.rebuild", { sessionId: chat.sessionId });
 		if (!r.ok) return;
+		// 旧会话的待答扩展 UI 请求随引擎销毁作废(pi 侧 timeout 兜底)
+		set((s) => ({ uiRequests: s.uiRequests.filter((u) => !chat.sessionId || u.sessionId !== chat.sessionId) }));
 		const snap = await client.request("session.get", { sessionId: r.sessionId });
 		if (snap.ok) {
 			set({
@@ -490,21 +611,18 @@ export const useIDE = create<IDEStore>((set, get) => ({
 	},
 
 	async askAgent(source, contextText, question) {
-		// 4F:错误一键问 agent —— 切到对话页签,推入上下文芯片与问题
+		// 4F 错误一键问 agent(Orca prefill 语义):切到对话页签,把上下文预填进输入框,
+		// 用户按 Enter 才真正发送(人在环:不意外起轮、不烧配额;可编辑后发送)。
+		// 旧行为(伪造一条未发送的用户消息)已废弃 —— 那只是 UI 假象,agent 根本没收到。
 		const { client, activeWorkspaceId } = get();
+		const label = { test: "测试失败", terminal: "终端输出", review: "评审项" }[source] ?? source;
 		set({ activeTab: "chat" });
 		if (client && activeWorkspaceId) {
 			await client.request("session.askWithContext", { workspaceId: activeWorkspaceId, source, contextText, question });
 		}
 		set((st) => ({
-			logs: [...st.logs, "[ctx] " + source + " · " + contextText.slice(0, 80)],
-			chat: {
-				...st.chat,
-				messages: [
-					...st.chat.messages,
-					{ id: Math.random(), role: "user" as const, text: question + "\n(上下文:" + contextText.slice(0, 160) + ")" },
-				],
-			},
+			logs: [...st.logs, `[ctx·${label}] ${contextText.slice(0, 80)}`],
+			chatPrefill: `【来自${label}】\n${contextText}\n\n${question}`,
 		}));
 	},
 
@@ -519,7 +637,15 @@ export const useIDE = create<IDEStore>((set, get) => ({
 			}
 		} else if (tier === "human") {
 			// ② 人侧运行 + 预览:起 dev server(共享),宿主开预览窗口
-			const ds = await client.request("devserver.ensure", { workspaceId: activeWorkspaceId });
+			// 设置中的 dev server 默认参数一并下发(command 留空 = 宿主默认)
+			const dsCfg = get().settings?.devserver;
+			const ds = await client.request("devserver.ensure", {
+				workspaceId: activeWorkspaceId,
+				port: dsCfg?.port,
+				probe: dsCfg?.probe,
+				readyPattern: dsCfg?.readyPattern || undefined,
+				command: dsCfg?.command || undefined,
+			});
 			if (ds.ok) {
 				set({ devserver: { state: "ready", url: ds.url, probeMode: ds.probeMode } });
 				await client.request("preview.open", { url: ds.url });
@@ -623,6 +749,29 @@ export const useIDE = create<IDEStore>((set, get) => ({
 				break;
 			case "memory.updated":
 				set({ memoryBudget: event.budget });
+				break;
+			case "agent.ui.request":
+				// pi 扩展 UI 请求:dialog 入待办卡片;notify 直落日志流(火后不管)
+				if (event.method === "notify") {
+					const tag = event.notifyType === "error" ? "错误" : event.notifyType === "warning" ? "警告" : "提示";
+					set((s) => ({ logs: [...s.logs, `[agent·${tag}] ${event.title ?? ""}${event.message ?? ""}`.trim()] }));
+					break;
+				}
+				set((s) => ({
+					uiRequests: [
+						...s.uiRequests.filter((u) => u.requestId !== event.requestId),
+						{
+							sessionId: event.sessionId,
+							requestId: event.requestId,
+							method: event.method,
+							title: event.title,
+							options: event.options,
+							message: event.message,
+							prefill: event.prefill,
+							notifyType: event.notifyType,
+						},
+					],
+				}));
 				break;
 			case "review.updated":
 				void get().refreshReview();

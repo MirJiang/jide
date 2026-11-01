@@ -15,7 +15,9 @@ import { TerminalView } from "./components/TerminalView";
 import { WorkflowDock } from "./components/WorkflowDock";
 import { TestPanel, ChecksPanel } from "./components/TestPanels";
 import { StatusBar } from "./components/StatusBar";
-import { TrustGate } from "./components/TrustGate";
+import { ProjectDialog } from "./components/ProjectDialog";
+import { SettingsDialog } from "./components/SettingsDialog";
+import { Icon } from "./components/Icon";
 
 export default function App() {
 	const s = useIDE();
@@ -43,6 +45,19 @@ export default function App() {
 				useIDE.setState((st) => ({ logs: [...st.logs, `连接失败:${err}`] }));
 			});
 	}, []);
+
+	// 主题:settings.theme(system/light/dark),system 跟随系统偏好;写入 html[data-theme]
+	const theme = s.settings?.theme ?? "system";
+	useEffect(() => {
+		const mq = window.matchMedia("(prefers-color-scheme: light)");
+		const apply = () => {
+			const light = theme === "light" || (theme === "system" && mq.matches);
+			document.documentElement.dataset.theme = light ? "light" : "dark";
+		};
+		apply();
+		mq.addEventListener("change", apply);
+		return () => mq.removeEventListener("change", apply);
+	}, [theme]);
 
 	const activeFile = s.tabs.find((t) => t.kind === "file" && t.path === s.activeTab);
 
@@ -74,24 +89,24 @@ export default function App() {
 									}}
 								>
 									{active && <div className="absolute left-0 right-0 top-0 h-0.5" style={{ background: "var(--acc)" }} />}
-									{t.kind === "chat" ? (
-										<span style={{ color: "var(--acc)" }}>✦</span>
-									) : (
-										<span>{t.dirty ? "●" : "▯"}</span>
-									)}
+									<Icon
+										name={t.kind === "chat" ? "ri-sparkling-2-fill" : t.kind === "diff" ? "ri-git-commit-line" : t.kind === "preview" ? "ri-global-line" : "ri-file-line"}
+										size={13}
+										color={t.kind === "chat" ? "var(--acc)" : t.dirty ? "var(--yellow)" : "var(--fg-faint)"}
+									/>
 									{t.title}
 									{t.dirty && <span className="h-[7px] w-[7px] rounded-full" style={{ background: "var(--yellow)" }} />}
 									{t.spotted && <span className="h-[7px] w-[7px] rounded-full" style={{ background: "var(--green)" }} />}
 									{t.kind === "file" && (
 										<button
-											className="ml-1 opacity-0 group-hover:opacity-100"
+											className="ml-1 flex items-center opacity-0 group-hover:opacity-100 hover:text-[var(--fg)]"
 											style={{ color: "var(--fg-faint)" }}
 											onClick={(e) => {
 												e.stopPropagation();
 												s.closeTab(key);
 											}}
 										>
-											×
+											<Icon name="ri-close-line" size={12} />
 										</button>
 									)}
 								</div>
@@ -99,10 +114,10 @@ export default function App() {
 						})}
 						{activeFile?.dirty && (
 							<button
-								className="my-1 ml-auto mr-2 flex-none self-center rounded border px-2 py-0.5 text-[11px]"
-								style={{ borderColor: "#4a6db3", background: "var(--acc-dim)", color: "#dbe7ff" }}
+								className="jide-btn my-1 ml-auto mr-2 flex-none self-center px-2 py-0.5 text-[11px]"
 								onClick={() => void s.saveActiveTab()}
 							>
+								<Icon name="ri-save-line" size={12} />
 								保存 ⌘S
 							</button>
 						)}
@@ -148,20 +163,21 @@ export default function App() {
 							>
 								{(
 									[
-										["terminal", "终端"],
-										["tests", "测试"],
-										["checks", "检查项"],
+										["terminal", "终端", "ri-terminal-box-line"],
+										["tests", "测试", "ri-flask-line"],
+										["checks", "检查项", "ri-checkbox-circle-line"],
 									] as const
-								).map(([id, label]) => (
+								).map(([id, label, icon]) => (
 									<button
 										key={id}
-										className="relative flex items-center gap-1.5 px-4 text-xs"
+										className="relative flex items-center gap-1.5 px-4 text-xs hover:bg-[var(--bg2)]"
 										style={{
 											borderRight: "1px solid var(--line)",
 											color: s.bottomTab === id ? "var(--fg)" : "var(--fg-faint)",
 										}}
 										onClick={() => s.setBottomTab(id)}
 									>
+										<Icon name={icon} size={13} color={s.bottomTab === id ? "var(--acc)" : undefined} />
 										{label}
 										{s.bottomTab === id && (
 											<div className="absolute bottom-0 left-0 right-0 h-0.5" style={{ background: "var(--acc)" }} />
@@ -180,7 +196,8 @@ export default function App() {
 				<WorkflowDock />
 			</div>
 			<StatusBar />
-			<TrustGate />
+			<ProjectDialog />
+			<SettingsDialog />
 			<style>{`
 				@keyframes jide-pulse{0%,100%{opacity:1}50%{opacity:.35}}
 				@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}

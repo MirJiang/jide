@@ -12,6 +12,7 @@ import type { HostEvent } from "@jide/contracts";
 
 export function TerminalView() {
 	const s = useIDE();
+	const fontSize = useIDE((st) => st.settings?.terminalFontSize ?? 12);
 	const hostRef = useRef<HTMLDivElement>(null);
 	const termRef = useRef<Terminal | null>(null);
 	const fitRef = useRef<FitAddon | null>(null);
@@ -23,13 +24,13 @@ export function TerminalView() {
 		if (!hostRef.current || termRef.current) return;
 		const term = new Terminal({
 			fontFamily: '"Cascadia Code","JetBrains Mono",Consolas,monospace',
-			fontSize: 12,
+			fontSize,
 			lineHeight: 1.35,
 			theme: {
-				background: "#0e1015",
-				foreground: "#aab3c5",
-				cursor: "#6ea8fe",
-				selectionBackground: "rgba(110,168,254,.25)",
+				background: "#0c0e10",
+				foreground: "#b4bdc4",
+				cursor: "#3ecf8e",
+				selectionBackground: "rgba(62,207,142,.25)",
 			},
 			convertEol: true,
 			scrollback: 5000,
@@ -71,6 +72,31 @@ export function TerminalView() {
 		return () => window.removeEventListener("jide-event", handler);
 	}, []);
 
+	// 设置中的终端字号变化 → 动态应用并重新适配
+	useEffect(() => {
+		const term = termRef.current;
+		if (!term) return;
+		term.options.fontSize = fontSize;
+		try {
+			fitRef.current?.fit();
+		} catch {}
+	}, [fontSize]);
+
+	// 跟随主题切换终端配色(html[data-theme] 由 App 写入)
+	const [isLight, setIsLight] = useState(() => document.documentElement.dataset.theme === "light");
+	useEffect(() => {
+		const mo = new MutationObserver(() => setIsLight(document.documentElement.dataset.theme === "light"));
+		mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+		return () => mo.disconnect();
+	}, []);
+	useEffect(() => {
+		const term = termRef.current;
+		if (!term) return;
+		term.options.theme = isLight
+			? { background: "#ffffff", foreground: "#3a434c", cursor: "#14a56d", selectionBackground: "rgba(20,165,109,.25)" }
+			: { background: "#0c0e10", foreground: "#b4bdc4", cursor: "#3ecf8e", selectionBackground: "rgba(62,207,142,.22)" };
+	}, [isLight]);
+
 	// 活动终端切换:重置视图
 	useEffect(() => {
 		const id = s.activeTerminalId;
@@ -107,7 +133,7 @@ export function TerminalView() {
 				</button>
 				<button
 					className="ml-auto rounded border px-1.5 py-0.5 text-[10.5px]"
-					style={{ borderColor: "#4a6db3", background: "var(--acc-dim)", color: "#dbe7ff" }}
+					style={{ borderColor: "var(--acc-line)", background: "var(--acc-dim)", color: "var(--acc-text)" }}
 					title="把终端最近输出送去对话"
 					onClick={() => {
 						const id = s.activeTerminalId;

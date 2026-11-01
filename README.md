@@ -51,4 +51,4 @@ hutch electrobun dev                 # 启动桌面壳
 - 冷启动 ~3.1s(dev 构建,含 debug console;预算 1.5s 需 release 构建复测)
 - 进程树回收:taskkill /T 方案验证通过(终端/dev server dispose 均已接入;recovery.test.ts)
 
-**已知边界**:终端为管道式 shell(ConPTY 在 Bun/cottontail 下 socket 即断,spike#2 记录;接口留 PTY 升级位);demo 模式走 pi Faux Provider(真实模型 = 配置 `~/.pi` 认证即可切换,无需改码)。
+**已知边界**:终端为管道式 shell(ConPTY 在 Bun/cottontail 下 socket 即断,spike#2 记录;接口留 PTY 升级位);模型走真实模式(读 `~/.pi` 认证/模型配置;faux 夹具仅保留给离线测试,协议 v2 起 demo 面已全部移除)。

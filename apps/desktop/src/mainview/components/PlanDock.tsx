@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useIDE } from "../store";
 
-export function PlanDockInner() {
+export function PlanDockInner({ onClose }: { onClose?: () => void }) {
 	const s = useIDE();
 	const [creating, setCreating] = useState(false);
 	const [goal, setGoal] = useState("");
@@ -13,12 +13,22 @@ export function PlanDockInner() {
 	const done = s.plan ? s.plan.steps.filter((st) => st.state === "done").length : 0;
 
 	return (
-		<div className="flex flex-col pb-2">
+		<div className="flex min-h-0 flex-1 flex-col pb-2">
 			<div
-				className="flex h-[34px] items-center px-3 text-[11px] font-semibold"
+				className="flex h-[34px] flex-none items-center px-3 text-[11px] font-semibold"
 				style={{ letterSpacing: 1.5, color: "var(--fg-dim)" }}
 			>
 				计划 · 当前 todo {s.plan ? `(${done}/${s.plan.steps.length})` : ""}
+				{onClose && (
+					<button
+						title="收起"
+						className="ml-auto flex h-5 w-5 items-center justify-center rounded hover:bg-[var(--bg2)]"
+						style={{ color: "var(--fg-faint)" }}
+						onClick={onClose}
+					>
+						×
+					</button>
+				)}
 			</div>
 			<div className="flex-1 overflow-y-auto pb-2">
 				{!s.plan && !creating && (
@@ -48,7 +58,7 @@ export function PlanDockInner() {
 						<div className="flex gap-2">
 							<button
 								className="rounded border px-2.5 py-1 text-xs"
-								style={{ background: "var(--acc-dim)", borderColor: "#4a6db3", color: "#dbe7ff" }}
+								style={{ background: "var(--acc-dim)", borderColor: "var(--acc-line)", color: "var(--acc-text)" }}
 								onClick={async () => {
 									const list = steps
 										.split("\n")

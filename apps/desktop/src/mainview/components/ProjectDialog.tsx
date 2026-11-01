@@ -1,12 +1,11 @@
-/** 项目对话框(W1):打开项目 / 信任确认。可关闭(×/Esc/暂不打开),启动不再强制选择项目 */
+/** 项目信任确认对话框(W1;打开/切换项目走标题栏下拉,不再弹窗) */
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useIDE } from "../store";
+import { Icon } from "./Icon";
 
 export function ProjectDialog() {
 	const s = useIDE();
-	const [path, setPath] = useState("");
-	const [err, setErr] = useState("");
 
 	// Esc 关闭(可随时从标题栏「项目」区再次唤起)
 	useEffect(() => {
@@ -18,80 +17,43 @@ export function ProjectDialog() {
 		return () => window.removeEventListener("keydown", onKey);
 	}, [s.projectDialog]);
 
-	if (s.projectDialog === "open") {
-		return (
-			<Gate onClose={() => s.closeProjectDialog()}>
-				<div className="text-base font-semibold">打开项目</div>
-				<div className="mb-4 mt-1 text-xs leading-relaxed" style={{ color: "var(--fg-dim)" }}>
-					Project = 一个 git 仓库。首次打开需要显式信任(W1),信任前只读浏览。
-				</div>
-				<input
-					autoFocus
-					value={path}
-					onChange={(e) => setPath(e.target.value)}
-					placeholder="C:\path\to\repo"
-					className="mb-3 w-full rounded-md border bg-transparent px-3 py-2 font-mono text-xs outline-none"
-					style={{ borderColor: "var(--line2)", color: "var(--fg)" }}
-					onKeyDown={(e) => {
-						if (e.key === "Enter" && path.trim()) {
-							setErr("");
-							void s.openProject(path.trim());
-						}
-					}}
-				/>
-				{err && <div className="mb-2 text-xs" style={{ color: "var(--red)" }}>{err}</div>}
-				<button
-					className="w-full rounded-md border py-2 text-sm font-medium"
-					style={{ background: "var(--acc-dim)", borderColor: "#4a6db3", color: "#dbe7ff" }}
-					onClick={async () => {
-						setErr("");
-						await s.openProject(path.trim());
-						if (!useIDE.getState().project) setErr("打开失败:请确认路径是 git 仓库");
-					}}
-				>
-					打开项目
-				</button>
-				<button
-					className="mt-2 w-full rounded-md border py-2 text-xs"
-					style={{ borderColor: "var(--line)", color: "var(--fg-faint)" }}
-					onClick={() => s.closeProjectDialog()}
-				>
-					暂不打开,先逛逛
-				</button>
-			</Gate>
-		);
-	}
-
 	if (s.projectDialog === "trust" && s.project) {
 		return (
-			<Gate onClose={() => s.closeProjectDialog()}>
-				<div className="text-base font-semibold">信任此项目?</div>
-				<div className="my-1 font-mono text-xs" style={{ color: "var(--yellow)" }}>{s.project.root}</div>
-				<div className="mb-4 mt-2 text-xs leading-relaxed" style={{ color: "var(--fg-dim)" }}>
-					信任前:只读浏览,禁止命令执行、文件写入与 agent 工具调用。
-					<br />
-					信任后:可创建隔离工作区、写文件、运行终端与计划自动提交。
+			<Gate icon="ri-shield-check-line" title="信任此项目?" onClose={() => s.closeProjectDialog()}>
+				<div className="my-1 flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 font-mono text-xs" style={{ borderColor: "var(--line)", background: "var(--bg0)", color: "var(--yellow)" }}>
+					<Icon name="ri-git-repository-line" size={13} />
+					<span className="truncate">{s.project.root}</span>
 				</div>
-				<button
-					className="w-full rounded-md border py-2 text-sm font-medium"
-					style={{ background: "var(--acc-dim)", borderColor: "#4a6db3", color: "#dbe7ff" }}
-					onClick={() => void s.trustProject()}
-				>
+				<div className="mb-4 mt-2.5 text-xs leading-relaxed" style={{ color: "var(--fg-dim)" }}>
+					<span className="flex items-start gap-1.5">
+						<Icon name="ri-eye-line" size={13} className="mt-0.5" color="var(--fg-faint)" />
+						信任前:只读浏览,禁止命令执行、文件写入与 agent 工具调用。
+					</span>
+					<span className="mt-1.5 flex items-start gap-1.5">
+						<Icon name="ri-shield-keyhole-line" size={13} className="mt-0.5" color="var(--green)" />
+						信任后:可创建隔离工作区、写文件、运行终端与计划自动提交。
+					</span>
+				</div>
+				<button className="jide-btn w-full py-2.5 text-sm" onClick={() => void s.trustProject()}>
+					<Icon name="ri-shield-check-line" size={14} />
 					信任并继续
 				</button>
 				<button
-					className="mt-2 w-full rounded-md border py-2 text-xs"
-					style={{ borderColor: "var(--line)", color: "var(--fg-faint)" }}
+					className="jide-btn-ghost mt-2 w-full py-2 text-xs"
 					onClick={() => s.closeProjectDialog()}
 				>
 					暂不信任,仅浏览
 				</button>
 				<button
-					className="mt-3 w-full text-[11px] underline underline-offset-2"
+					className="mt-3 flex w-full items-center justify-center gap-1 text-[11px] underline underline-offset-2"
 					style={{ color: "var(--fg-faint)" }}
-					onClick={() => useIDE.setState({ projectDialog: "open" })}
+					onClick={() => {
+						useIDE.getState().closeProjectDialog();
+						useIDE.getState().setProjectMenuOpen(true);
+					}}
 				>
-					打开其他项目…
+					<Icon name="ri-folder-3-line" size={12} />
+					切换其他项目…
 				</button>
 			</Gate>
 		);
@@ -100,11 +62,11 @@ export function ProjectDialog() {
 	return null;
 }
 
-function Gate({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+function Gate({ icon, title, children, onClose }: { icon: string; title: string; children: React.ReactNode; onClose: () => void }) {
 	return (
 		<div
 			className="absolute inset-0 z-[100] flex items-center justify-center"
-			style={{ background: "rgba(8,10,14,.72)", backdropFilter: "blur(3px)" }}
+			style={{ background: "rgba(6,8,10,.72)", backdropFilter: "blur(3px)" }}
 			onClick={(e) => {
 				if (e.target === e.currentTarget) onClose();
 			}}
@@ -114,13 +76,22 @@ function Gate({ children, onClose }: { children: React.ReactNode; onClose: () =>
 				style={{ background: "var(--bg1)", borderColor: "var(--line2)", boxShadow: "0 30px 80px rgba(0,0,0,.6)" }}
 			>
 				<button
-					className="absolute right-3 top-2.5 rounded px-1.5 text-sm"
+					className="absolute right-3 top-2.5 flex items-center rounded px-1.5 hover:text-[var(--fg)]"
 					style={{ color: "var(--fg-faint)" }}
 					title="关闭(Esc)"
 					onClick={onClose}
 				>
-					×
+					<Icon name="ri-close-line" size={15} />
 				</button>
+				<div className="mb-3 flex items-center gap-2.5">
+					<span
+						className="flex h-8 w-8 items-center justify-center rounded-lg"
+						style={{ background: "var(--acc-dim)", color: "var(--acc)" }}
+					>
+						<Icon name={icon} size={17} />
+					</span>
+					<span className="text-base font-semibold">{title}</span>
+				</div>
 				{children}
 			</div>
 		</div>
