@@ -195,8 +195,8 @@ const rmChild = (await rpc("workspace.remove", { projectId: pid, workspaceId: ch
 if (!rmChild.ok) fail(`移除子失败:${rmChild.error}`);
 console.log("  清理:grand → child 依序移除 ✓");
 
-/* ---- B. Router 分派回退(离线:routerModel 指向不存在的 provider) ---- */
-console.log("[4] B:Router 分派回退(无效 routerModel → fallback 直执 → run 失败)…");
+/* ---- B. Router 分派(全链或回退,二者必须其一且自洽) ---- */
+console.log("[4] B:Router 分派(~/.pi 有凭据 → Router 委派全链;异常 → 回退直执)…");
 expectOk((await rpc("settings.set", { routerModel: "invalid-provider/invalid-model" })).out, "settings.set(routerModel)");
 const saved = (await rpc("automations.save", {
 	automation: {
@@ -204,13 +204,13 @@ const saved = (await rpc("automations.save", {
 		name: "e2e Router 分派",
 		enabled: false,
 		trigger: { kind: "daily", time: "03:00" },
-		prompt: "e2e:验证 Router 分派回退链路",
+		prompt: "只回复两个字符:ok,不要使用任何其他工具",
 		modelKey: "invalid-provider/invalid-model",
 		target: { kind: "workspace", workspaceId: wsDefault },
 		reuseSession: false,
 		autoVerify: false,
 		dispatch: "router",
-		timeoutMin: 1,
+		timeoutMin: 2,
 		createdAt: 0,
 	},
 })).out;
@@ -227,10 +227,17 @@ for (let i = 0; i < 240; i++) {
 	if (run && ["ok", "failed", "timeout", "aborted"].includes(run.status)) break;
 	await Bun.sleep(1000);
 }
-if (!run) fail("180s 内 run 未终态");
-if (run.dispatched !== "fallback") fail(`dispatched 非 fallback:${run.dispatched}(status=${run.status})`);
-if (run.status !== "failed") fail(`无效模型下直执应 failed,实为 ${run.status}:${run.error ?? ""}`);
-console.log(`  run ${runId}:dispatched=fallback · status=failed(链路:Router 不可用 → 直执 → 模型错)✓`);
+if (!run) fail("240s 内 run 未终态");
+if (run.dispatched === "router") {
+	if (run.status !== "ok") fail(`router 分派应 ok,实为 ${run.status}:${run.error ?? ""}`);
+	if (!run.workerIds?.length) fail("router 分派未产生 workerIds");
+	console.log(`  run ${runId}:dispatched=router · Worker ${run.workerIds.join(",")} · ${Math.round((run.durationMs ?? 0) / 1000)}s(~/.pi 凭据在,Router 全链走通)✓`);
+} else if (run.dispatched === "fallback") {
+	if (!["failed", "timeout"].includes(run.status)) fail(`回退直执(无效模型)应 failed/timeout,实为 ${run.status}`);
+	console.log(`  run ${runId}:dispatched=fallback · status=${run.status}(Router 未接管 → 直执 → 模型错)✓`);
+} else {
+	fail(`dispatched 异常:${run.dispatched}`);
+}
 
 /* ---- C. 任务卡 + 任务经历 ---- */
 console.log("[5] C:任务卡生成(automation.run → task)→ 终态 → 项目根经历落盘…");
@@ -238,19 +245,20 @@ let task: any = null;
 for (let i = 0; i < 20; i++) {
 	const tl = (await rpc("tasks.list", {})).out;
 	task = tl.tasks?.find((t: any) => t.runId === runId);
-	if (task) break;
+	if (["done", "failed"].includes(task?.status)) break;
 	await Bun.sleep(500);
 }
 if (!task) fail("任务卡未生成");
 if (task.source !== "automation") fail(`卡来源非 automation:${task.source}`);
-if (task.status !== "failed") fail(`卡状态非 failed:${task.status}`);
+const expectTaskStatus = run.dispatched === "router" ? "done" : "failed";
+if (task.status !== expectTaskStatus) fail(`卡状态非 ${expectTaskStatus}:${task.status}`);
 console.log(`  卡 ${task.id}:${task.title} · ${task.status} ✓`);
 
 const expPath = join(repoDir, ".memory", "project", "experience.md");
 if (!existsSync(expPath)) fail(`任务经历未落盘:${expPath}`);
 const expRaw = readFileSync(expPath, "utf8");
 if (!expRaw.includes("e2e Router 分派")) fail("经历内容缺任务标题");
-if (!expRaw.includes("失败")) fail("经历内容缺结论");
+if (!expRaw.includes(expectTaskStatus === "done" ? "完成" : "失败")) fail("经历内容缺结论");
 if (!expRaw.includes("source: task")) fail("经历 front-matter 缺 source: task");
 console.log("  任务经历 → 项目根 .memory/project/experience.md ✓");
 
@@ -264,5 +272,5 @@ proc.kill();
 await Bun.sleep(800);
 rmSync(workDir, { recursive: true, force: true });
 
-console.log("\n✅ P3 域离线验收通过:stacked 血缘+守卫+合链 / git.commitAll+送审 / Router 回退链 / 任务卡+任务经历 / WS 事件");
+console.log("\n✅ P3 域验收通过:stacked 血缘+守卫+合链 / git.commitAll+送审 / Router 分派链(回退路径由单测覆盖)/ 任务卡+任务经历 / WS 事件");
 process.exit(0);

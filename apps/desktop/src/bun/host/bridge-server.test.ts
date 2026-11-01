@@ -77,13 +77,24 @@ describe("ToolBridgeServer", () => {
 		expect(seenParams).toEqual({ name: "jide" });
 	});
 
-	test("缺 workspaceId → 400;坏 JSON → 400", async () => {
-		const noWid = await fetch(`${url}/tool/greet`, {
+	test("缺 workspaceId:params 兜底 / 交处理器返回可读错误;坏 JSON → 400", async () => {
+		// params.workspaceId 兜底(常驻 Router 无自身工作区,靠模型显式传参定目标)
+		bridge.register("wid_echo", async (wid) => ({ content: [{ type: "text", text: `wid=${wid}` }] }));
+		const viaParams = await fetch(`${url}/tool/wid_echo`, {
+			method: "POST",
+			headers: { authorization: `Bearer ${bridge.token}` },
+			body: JSON.stringify({ params: { workspaceId: "p:from-params" } }),
+		});
+		expect(viaParams.status).toBe(200);
+		expect(((await viaParams.json()) as BridgeToolResult).content[0].text).toBe("wid=p:from-params");
+		// 完全缺 workspaceId → 仍调处理器(空串),由处理器返回可读错误而非协议 400
+		const noWid = await fetch(`${url}/tool/wid_echo`, {
 			method: "POST",
 			headers: { authorization: `Bearer ${bridge.token}` },
 			body: JSON.stringify({ params: {} }),
 		});
-		expect(noWid.status).toBe(400);
+		expect(noWid.status).toBe(200);
+		expect(((await noWid.json()) as BridgeToolResult).content[0].text).toBe("wid=");
 		const badJson = await fetch(`${url}/tool/greet`, {
 			method: "POST",
 			headers: { authorization: `Bearer ${bridge.token}` },

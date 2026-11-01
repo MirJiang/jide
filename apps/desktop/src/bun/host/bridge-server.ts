@@ -74,26 +74,28 @@ export class ToolBridgeServer {
 		const handler = this.handlers.get(m[1]);
 		if (!handler) return json(404, { error: `未知工具:${m[1]}` });
 
-		return (async () => {
-			let body: { workspaceId?: string; params?: Record<string, any> };
-			try {
-				body = await req.json();
-			} catch {
-				return json(400, { error: "body 须为 JSON {workspaceId, params}" });
-			}
-			if (!body.workspaceId) return json(400, { error: "缺少 workspaceId(会话创建时未解析到工作区)" });
-			try {
-				const result = await handler(body.workspaceId, body.params ?? {});
-				return json(200, result);
-			} catch (err: any) {
-				// 处理器异常 → 工具错误结果(agent 能读到错误文本),而非协议失败
-				return json(200, {
-					content: [{ type: "text", text: String(err?.message ?? err) }],
-					details: undefined,
-					isError: true,
-				} satisfies BridgeToolResult);
-			}
-		})();
+			return (async () => {
+				let body: { workspaceId?: string; params?: Record<string, any> };
+				try {
+					body = await req.json();
+				} catch {
+					return json(400, { error: "body 须为 JSON {workspaceId, params}" });
+				}
+				// workspaceId:会话 env 优先,模型显式传参兜底(常驻 Router 无自身工作区,靠 params 定目标);
+				// 仍缺时交由处理器返回可读错误(不在此硬 400)
+				const wsId = body.workspaceId ?? (typeof body.params?.workspaceId === "string" ? body.params.workspaceId : "");
+				try {
+					const result = await handler(wsId, body.params ?? {});
+					return json(200, result);
+				} catch (err: any) {
+					// 处理器异常 → 工具错误结果(agent 能读到错误文本),而非协议失败
+					return json(200, {
+						content: [{ type: "text", text: String(err?.message ?? err) }],
+						details: undefined,
+						isError: true,
+					} satisfies BridgeToolResult);
+				}
+			})();
 	}
 }
 

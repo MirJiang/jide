@@ -149,6 +149,8 @@ export class AgentHost {
 			join(import.meta.dir, "jide-extensions"),
 			join(import.meta.dir, "..", "jide-extensions"),
 			join(import.meta.dir, "..", "..", "jide-extensions"),
+			// 源码态:扩展在 src/bun/host/extensions/ 本文件旁(daemon 可从任意 cwd 拉起)
+			join(import.meta.dir, "extensions"),
 			join(process.cwd(), "src", "bun", "host", "extensions"),
 		];
 		for (const dir of candidates) {
