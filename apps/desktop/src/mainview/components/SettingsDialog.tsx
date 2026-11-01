@@ -259,6 +259,14 @@ function ModelPage({ onNavigate }: { onNavigate: (c: Category) => void }) {
 				/>
 			</Row>
 
+			<Row label="Router/精判模型" desc="委派编排与日志精判等隐性轻任务用;空 = 跟随默认模型">
+				<Select
+					value={st.routerModel}
+					options={[["", "(跟随默认模型)"], ...favorites.map((k) => [k, nameOf(k)] as [string, string])]}
+					onChange={(v) => void s.saveSettings({ routerModel: v })}
+				/>
+			</Row>
+
 			<Row label="编排模式" desc="会话获得委派工具(spawn_worker 等):agent 可把子任务拆给 Worker 池并行执行,完成后结果自动回喂;关闭则单会话直驱">
 				<Select
 					value={st.orchestrator ? "1" : "0"}

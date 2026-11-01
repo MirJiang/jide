@@ -87,12 +87,18 @@ export default function (pi: any) {
 			description:
 				"把一个自包含的子任务委派给 Worker(独立会话+独立工具,在目标工作区执行)。目标须写清:做什么/验收标准/不要越界做什么。立即返回 workerId;用 wait_workers 收结果。适合可并行的独立子任务(如分别排查两个模块),不适合强顺序依赖的步骤。",
 			promptSnippet: "spawn_worker({objective}) → workerId:并行委派子任务。",
-			promptGuidelines: ["委派前把目标写成自包含任务书;并行委派后用 wait_workers 汇总"],
+			promptGuidelines: [
+				"委派前把目标写成自包含任务书;并行委派后用 wait_workers 汇总",
+				"speculative=true:后台静默修复,验证全绿才自动提交进评审队列,红则丢弃 —— 低风险修复用它",
+			],
 			parameters: Type.Object({
 				objective: Type.String({ description: "自包含任务书(做什么/验收标准/边界)" }),
 				workspaceId: Type.Optional(Type.String({ description: "缺省 = 当前工作区" })),
 				modelKey: Type.Optional(Type.String({ description: 'Worker 模型 key("<provider>/<modelId>");缺省 = pi 默认' })),
 				timeoutMin: Type.Optional(Type.Number({ description: "单 Worker 超时分钟(默认 30)" })),
+				speculative: Type.Optional(
+					Type.Boolean({ description: "投机执行:于隔离 worktree 静默修复,测试+检查项全绿才自动提交进评审队列,否则丢弃" }),
+				),
 			}),
 		}),
 		orchTool({

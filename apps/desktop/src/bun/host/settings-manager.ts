@@ -18,6 +18,7 @@ export const DEFAULT_SETTINGS: JideSettings = {
 	favoriteModels: [],
 	defaultModel: "",
 	orchestrator: true,
+	routerModel: "",
 	autostart: false,
 };
 
@@ -71,6 +72,7 @@ export class SettingsManager {
 			favoriteModels: normModelKeys(p.favoriteModels ?? base.favoriteModels),
 			defaultModel: normModelKey(p.defaultModel ?? base.defaultModel),
 			orchestrator: p.orchestrator ?? base.orchestrator,
+			routerModel: normModelKey(p.routerModel ?? base.routerModel),
 			autostart: p.autostart ?? base.autostart,
 		};
 	}

@@ -58,7 +58,10 @@ const log = (msg: string) => {
 /* ==================== 服务装配(自 index.ts 平移) ==================== */
 
 const host = new AgentHost(RUNTIME_ROOT);
-const logPump = new DevLogPump(host);
+const logPump = new DevLogPump(host, {
+	// 两级过滤第二级:粗筛命中 → 模型精判(false=不打断,null=精判不可用回退直推)
+	judge: (workspaceId, tail) => orchestrator.judgeLogHit(workspaceId, tail),
+});
 const workspaces = new WorkspaceManager(RUNTIME_ROOT);
 const files = new FileService(workspaces);
 const settings = new SettingsManager(RUNTIME_ROOT);
@@ -313,9 +316,14 @@ bridge.register("spawn_worker", async (workspaceId, p) => {
 			workspaceId: p.workspaceId || workspaceId,
 			modelKey: p.modelKey,
 			timeoutMin: p.timeoutMin,
+			speculative: p.speculative === true,
 			routerSessionId: p.__router,
 		});
-		return brText(`已委派 Worker ${rec.id}(排队中);用 wait_workers({workerIds:["${rec.id}"]}) 收结果。`);
+		return brText(
+			rec.speculative
+				? `已委派投机 Worker ${rec.id}(隔离 worktree 静默修复;验证全绿才提交进评审队列,否则丢弃)。`
+				: `已委派 Worker ${rec.id}(排队中);用 wait_workers({workerIds:["${rec.id}"]}) 收结果。`,
+		);
 	} catch (err: any) {
 		return brText(String(err?.message ?? err), true);
 	}
@@ -364,10 +372,25 @@ bridge.register("stop_worker", async (_wid, p) => {
 
 host.bindBridge(bridge);
 
-/* ---- 编排层(P2):当前对话即 Router,委派 Worker 池 ---- */
-const orchestrator = new OrchestratorManager({ host, workspaces });
+/* ---- 编排层(P2):当前对话即 Router,委派 Worker 池;含精判会话与投机收口 ---- */
+const orchestrator = new OrchestratorManager({
+	host,
+	workspaces,
+	verify: {
+		scanTests: scanTestFiles,
+		gitStatus: (workspaceId) => workspaces.gitStatus(workspaceId),
+		mapTests: mapTests,
+		runTests: (cwd, files_, total) => runner.run(cwd, files_, total),
+		runChecks: (workspaceId) => checks.run(workspaceId),
+		enqueueChecks: (workspaceId, passed, total) => review.enqueueChecks(workspaceId, passed, total),
+		commitAll: (workspaceId, message) => workspaces.commitAll(workspaceId, message, true),
+		enqueueCommit: (workspaceId, branch, sha, message) => review.enqueueCommit(workspaceId, branch, sha, message),
+	},
+	getRouterModelKey: () => settings.get().routerModel || settings.get().defaultModel,
+	judgeCwd: RUNTIME_ROOT,
+});
 
-/* dev server 逐行日志 → 回喂泵(错误检测 + 节流) */
+/* dev server 逐行日志 → 回喂泵(错误检测 + 节流;精判钩子:模型判定是否值得打断) */
 devservers.onLogLine = (workspaceId, line) => logPump.onLine(workspaceId, line);
 
 /* ==================== 事件出口:journal 分配 seq + 落盘 + WS 广播 ==================== */

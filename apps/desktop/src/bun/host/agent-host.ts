@@ -424,6 +424,14 @@ export class AgentHost {
 		return pushed;
 	}
 
+	/** 工作区是否有 busy 会话(精判前置:无 busy 不必精判) */
+	hasBusySessionForWorkspace(workspaceId: string): boolean {
+		for (const entry of this.sessions.values()) {
+			if (entry.workspaceId === workspaceId && entry.status === "busy") return true;
+		}
+		return false;
+	}
+
 	/** 工作区是否有关注中的会话(日志泵空闲提示用) */
 	hasSessionForWorkspace(workspaceId: string): boolean {
 		for (const entry of this.sessions.values()) {

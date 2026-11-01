@@ -21,6 +21,8 @@ export interface DevLogPumpOptions {
 	minIntervalMs?: number;
 	maxPushesPerTurn?: number;
 	maxBufferLines?: number;
+	/** 模型精判(两级过滤第二级):返回 false = 判定不值得打断(降级 host.log);null = 精判不可用(回退直推) */
+	judge?: (workspaceId: string, tail: string) => Promise<boolean | null>;
 }
 
 interface HostEventLike {
@@ -42,6 +44,7 @@ export class DevLogPump {
 			steerBusyForWorkspace: (workspaceId: string, text: string) => Promise<number>;
 			getSession: (sessionId: string) => { workspaceId?: string } | undefined;
 			hasSessionForWorkspace: (workspaceId: string) => boolean;
+			hasBusySessionForWorkspace: (workspaceId: string) => boolean;
 		},
 		opts?: DevLogPumpOptions,
 	) {
@@ -116,7 +119,21 @@ export class DevLogPump {
 		}
 
 		this.lastPushAt.set(workspaceId, now);
-		const pushed = await this.host.steerBusyForWorkspace(workspaceId, `【宿主推送】dev server 日志出现错误:\n${tail}`);
+		const tailText = `【宿主推送】dev server 日志出现错误:\n${tail}`;
+
+		// 两级过滤第二级:模型精判(仅当确有 busy 会话可打断;失败回退直推)
+		if (this.opts.judge) {
+			const hasBusy = this.host.hasBusySessionForWorkspace(workspaceId);
+			if (hasBusy) {
+				const verdict = await this.opts.judge(workspaceId, tail).catch(() => null);
+				if (verdict === false) {
+					this.host.log("info", `精判:该错误暂不值得打断 agent(已记录):${tail.slice(0, 120)}`);
+					return;
+				}
+			}
+		}
+
+		const pushed = await this.host.steerBusyForWorkspace(workspaceId, tailText);
 		if (pushed > 0) {
 			this.pushCount.set(workspaceId, count + 1);
 			this.host.log("info", `dev server 错误日志已插队推送给 agent(${pushed} 个会话)`);

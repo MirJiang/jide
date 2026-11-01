@@ -47,6 +47,8 @@ export interface JideSettings {
 	defaultModel: string;
 	/** 编排模式(P2):会话获得委派工具(spawn_worker 等),可拆子任务给 Worker 池;默认开 */
 	orchestrator: boolean;
+	/** Router/精判专用模型 key;空 = 跟随默认模型(日志精判等隐性轻任务也用它) */
+	routerModel: string;
 	/** 开机自启(Windows 注册表 Run 键;dev 态指向 build2 launcher) */
 	autostart: boolean;
 }
@@ -140,6 +142,10 @@ export interface WorkerRecordView {
 	durationMs?: number;
 	summary?: string;
 	error?: string;
+	/** 投机执行:隔离 worktree 静默修复 */
+	speculative?: boolean;
+	/** 投机验证结论 */
+	verified?: "green" | "red" | "skipped";
 }
 
 /* ------------------------------------------------------------------ */

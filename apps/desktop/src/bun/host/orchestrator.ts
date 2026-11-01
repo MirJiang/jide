@@ -26,6 +26,10 @@ export interface WorkerRecord {
 	durationMs?: number;
 	summary?: string;
 	error?: string;
+	/** 投机执行(P2):后台静默修复,验证绿才提交进评审队列 */
+	speculative?: boolean;
+	/** 投机验证结论 */
+	verified?: "green" | "red" | "skipped";
 	/** Watchdog 已提醒过(一次) */
 	loopWarned?: boolean;
 }
@@ -43,7 +47,24 @@ export interface OrchestratorDeps {
 	};
 	workspaces: {
 		locate(workspaceId: string): { cwd: string | null; projectId: string | null };
+		getWorkspace(projectId: string, workspaceId: string): { branch?: string } | undefined;
+		createWorktree(repoId: string, name: string): Promise<{ ok: true; workspaceId: string; path: string } | { ok: false; error: string }>;
 	};
+	/** 投机执行:验证与提交进评审队列(与 AutomationManager 同一套语义) */
+	verify?: {
+		scanTests(cwd: string): string[];
+		gitStatus(workspaceId: string): Promise<{ ok: true; changes: Array<{ path: string }> } | { ok: false; error: string }>;
+		mapTests(changed: string[], all: string[]): string[];
+		runTests(cwd: string, files: string[], total: number): Promise<{ ok: boolean; selected: number; total: number; results: Array<{ status: string }> }>;
+		runChecks(workspaceId: string): Promise<{ ok: boolean; results: Array<{ passed: boolean; title: string }> }>;
+		enqueueChecks(workspaceId: string, passed: number, total: number): void;
+		commitAll(workspaceId: string, message: string): Promise<{ ok: true; sha: string } | { ok: false; error: string }>;
+		enqueueCommit(workspaceId: string, branch: string, sha: string, message: string): void;
+	};
+	/** Router/精判专用模型 key(空 = pi 默认);精判会话与投机 Worker 用 */
+	getRouterModelKey?: () => string;
+	/** 精判会话的工作目录(daemon runtime) */
+	judgeCwd?: string;
 	maxConcurrent?: number;
 	workerTimeoutMin?: number;
 	/** 同名词工具连续几次判定疑似循环(默认 4) */
@@ -56,6 +77,8 @@ export interface SpawnWorkerOptions {
 	workspaceId?: string;
 	modelKey?: string;
 	timeoutMin?: number;
+	/** 投机执行(P2):隔离 worktree 静默修复,验证绿才提交进评审队列 */
+	speculative?: boolean;
 	/** 发起方 Router 会话 id(完成回喂目标;扩展经 ctx 注入) */
 	routerSessionId?: string;
 }
@@ -115,6 +138,60 @@ export class OrchestratorManager {
 		}
 	}
 
+	/* ---------------- Trigger 模型精判(两级过滤第二级) ---------------- */
+
+	private judgeSessionId: string | null = null;
+	private judgeChain: Promise<boolean | null> = Promise.resolve(null);
+
+	/**
+	 * 日志粗筛命中后的模型精判:独立隐藏会话(Router 专用模型,不污染用户对话),
+	 * 串行执行(同一会话不能并发轮次);失败/超时/解析不出 → null(调用方回退直推)。
+	 */
+	judgeLogHit(workspaceId: string, tail: string): Promise<boolean | null> {
+		this.judgeChain = this.judgeChain.then(() => this.judgeOnce(workspaceId, tail));
+		return this.judgeChain;
+	}
+
+	private async judgeOnce(_workspaceId: string, tail: string): Promise<boolean | null> {
+		try {
+			if (!this.judgeSessionId || this.deps.host.getSession(this.judgeSessionId)?.status === "disposed") {
+				const modelKey = this.deps.getRouterModelKey?.() ?? "";
+				const model = modelKey ? (parseModelKey(modelKey) ?? undefined) : undefined;
+				const entry = await this.deps.host.createSession({
+					workspacePath: this.deps.judgeCwd ?? process.cwd(),
+					model,
+				});
+				this.judgeSessionId = entry.sessionId;
+			}
+			const sid = this.judgeSessionId;
+			let unsub = () => {};
+			const settledP = new Promise<"settled">((resolve) => {
+				unsub = this.deps.host.onSettled(sid, () => resolve("settled"));
+			});
+			await this.deps.host.prompt(
+				sid,
+				`你是日志事件精判器。判断以下 dev server 日志是否值得【立即打断】正在该工作区干活的 agent(仅当错误可能与进行中工作相关且现在知道有价值;普通噪音一律 false)。只回复一行 JSON:{"interrupt":true/false,"reason":"一句话"}\n日志尾部:\n${tail.slice(0, 1500)}`,
+			);
+			const outcome = await Promise.race([
+				settledP,
+				new Promise<"timeout">((r) => setTimeout(() => r("timeout"), 25_000)),
+			]);
+			unsub();
+			if (outcome === "timeout") {
+				await this.deps.host.abort(sid).catch(() => {});
+				return null;
+			}
+			const snap = this.deps.host.getSnapshot(sid);
+			const last = [...(snap?.messages ?? [])].reverse().find((m) => m.role === "assistant");
+			const m = /\{[^{}]*\}/.exec(last?.text ?? "");
+			if (!m) return null;
+			const parsed = JSON.parse(m[0]);
+			return typeof parsed.interrupt === "boolean" ? parsed.interrupt : null;
+		} catch {
+			return null;
+		}
+	}
+
 	/* ---------------- 委派 ---------------- */
 
 	spawnWorker(opts: SpawnWorkerOptions): WorkerRecord {
@@ -127,6 +204,7 @@ export class OrchestratorManager {
 			objective: opts.objective,
 			status: "queued",
 			startedAt: Date.now(),
+			...(opts.speculative ? { speculative: true } : {}),
 		};
 		this.workers.set(rec.id, rec);
 		this.queue.push({ rec, objective: opts.objective, modelKey: opts.modelKey, timeoutMin: opts.timeoutMin ?? this.deps.workerTimeoutMin ?? 30 });
@@ -139,16 +217,26 @@ export class OrchestratorManager {
 		while (this.active < cap && this.queue.length) {
 			const item = this.queue.shift()!;
 			this.active++;
-			void this.execWorker(item.rec, item.objective, item.modelKey, item.timeoutMin).finally(() => {
+			void this.execWorker(item.rec, item.objective, item.modelKey, item.timeoutMin, item.rec.speculative).finally(() => {
 				this.active--;
 				this.pump();
 			});
 		}
 	}
 
-	private async execWorker(rec: WorkerRecord, objective: string, modelKey?: string, timeoutMin: number) {
+	private async execWorker(rec: WorkerRecord, objective: string, modelKey?: string, timeoutMin: number, speculative?: boolean) {
 		this.running.set(rec.id, rec.sessionId);
 		rec.status = "running";
+		if (speculative) {
+			rec.speculative = true;
+			// 投机执行:必须落隔离 worktree(验证绿才提交,W5/W6 门禁语义)
+			const loc0 = this.deps.workspaces.locate(rec.workspaceId);
+			if (!loc0.projectId) throw new Error("投机执行要求目标为 git 仓库工作区");
+			const wt = await this.deps.workspaces.createWorktree(loc0.projectId, `spec-${rec.id.slice(2)}-${Date.now().toString(36)}`);
+			if (!wt.ok) throw new Error(`投机工作区创建失败:${wt.error}`);
+			rec.workspaceId = wt.workspaceId;
+			this.emit({ type: "host.log", level: "info", message: `投机 Worker ${rec.id} 于隔离 worktree ${wt.branch ?? ""} 启动` });
+		}
 		this.emit({ type: "host.log", level: "info", message: `Worker ${rec.id} 启动(目标:${objective.slice(0, 60)})` });
 		try {
 			const loc = this.deps.workspaces.locate(rec.workspaceId);
@@ -179,6 +267,43 @@ export class OrchestratorManager {
 				const snap = this.deps.host.getSnapshot(entry.sessionId);
 				const lastAssistant = [...(snap?.messages ?? [])].reverse().find((m) => m.role === "assistant");
 				rec.summary = lastAssistant?.text?.slice(-600);
+			}
+
+			// 投机收口:验证绿 → 自动提交进评审队列;红 → 原样保留,不进主线(W6 门禁)
+			if (speculative && rec.status === "done" && this.deps.verify) {
+				const v = this.deps.verify;
+				const loc2 = this.deps.workspaces.locate(rec.workspaceId);
+				if (!loc2.cwd) throw new Error("投机工作区丢失");
+				let green = true;
+				const all = v.scanTests(loc2.cwd);
+				const st = await v.gitStatus(rec.workspaceId);
+				const changed = st.ok ? st.changes.map((c) => c.path) : [];
+				const selected = v.mapTests(changed, all);
+				if (selected.length) {
+					const t = await v.runTests(loc2.cwd, selected, all.length);
+					const passed = t.results.filter((x) => x.status === "pass").length;
+					if (t.results.length && passed < t.results.length) green = false;
+					rec.summary = `测试 ${passed}/${t.results.length}${rec.summary ? ` · ${rec.summary.slice(0, 300)}` : ""}`;
+				}
+				const c = await v.runChecks(rec.workspaceId);
+				if (c.ok && c.results.length) {
+					const cPass = c.results.filter((x) => x.passed).length;
+					v.enqueueChecks(rec.workspaceId, cPass, c.results.length);
+					if (cPass < c.results.length) green = false;
+					rec.summary = `检查项 ${cPass}/${c.results.length} · ${rec.summary ?? ""}`;
+				}
+				rec.verified = green ? "green" : "red";
+				if (green) {
+					const cm = await v.commitAll(rec.workspaceId, `Agent · 投机修复:${objective.slice(0, 60)}`);
+					if (cm.ok) {
+						const info = this.deps.workspaces.getWorkspace(loc2.projectId!, rec.workspaceId);
+						v.enqueueCommit(rec.workspaceId, info?.branch ?? "", cm.sha, `Agent · 投机修复:${objective.slice(0, 60)}`);
+						rec.summary = `已提交 ${cm.sha.slice(0, 8)}(待评审) · ${rec.summary ?? ""}`;
+					} else if (cm.error !== "nothing to commit") {
+						rec.verified = "red";
+						rec.error = `提交失败:${cm.error}`;
+					}
+				}
 			}
 		} catch (err: any) {
 			rec.status = "failed";
