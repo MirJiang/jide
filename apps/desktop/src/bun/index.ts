@@ -12,7 +12,7 @@
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
-import { BrowserWindow, Updater } from "electrobun/main";
+import { BrowserView, BrowserWindow, Updater } from "electrobun/main";
 import { openFileDialog } from "electrobun/main/utils";
 import type { RPCSchema } from "electrobun/main";
 import type { HostEvent, HostRequestShapes } from "@jide/contracts";
@@ -116,10 +116,14 @@ async function ensureDaemon(): Promise<void> {
 	rmSync(portFile, { force: true });
 	rmSync(tokenFile, { force: true });
 	const appDir = join(import.meta.dir, "..");
+	// 解析顺序:显式 env → 打包态 compiled exe → 打包态 cottontail + daemon bundle(标准路径)→ 源码态 bun 直跑
 	const compiled = join(appDir, "jide-daemon.exe");
+	const bundled = join(appDir, "jide-daemon.js");
+	const cottontail = join(appDir, "..", "..", "bin", "cottontail.exe");
 	let cmd: string[];
 	if (process.env.JIDE_DAEMON_BIN) cmd = [process.env.JIDE_DAEMON_BIN];
 	else if (existsSync(compiled)) cmd = [compiled];
+	else if (existsSync(bundled) && existsSync(cottontail)) cmd = [cottontail, bundled];
 	else cmd = [process.env.JIDE_DAEMON_BUN ?? "bun", join(import.meta.dir, "daemon.ts")];
 	log(`启动 daemon:${cmd.join(" ")}`);
 	Bun.spawn(cmd, {
