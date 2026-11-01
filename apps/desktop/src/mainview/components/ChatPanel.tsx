@@ -169,7 +169,7 @@ function ModelPicker() {
 				<>
 					<div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
 					<div
-						className="absolute right-0 top-7 z-50 max-h-[420px] w-[340px] overflow-y-auto rounded-lg border p-1.5"
+						className="absolute bottom-9 left-0 z-50 max-h-[420px] w-[340px] overflow-y-auto rounded-lg border p-1.5"
 						style={{ background: "var(--bg1)", borderColor: "var(--line2)", boxShadow: "0 12px 40px rgba(0,0,0,.5)" }}
 					>
 						{catalog.length === 0 ? (
@@ -224,33 +224,6 @@ export function ChatPanel() {
 
 	return (
 		<div className="flex h-full flex-col">
-			<div
-				className="flex items-center gap-2 px-4 py-1.5"
-				style={{ background: "var(--bg1)", borderBottom: "1px solid var(--line)" }}
-			>
-				<PixelJ cell={2.5} busy={busy} glow title="JIDE Agent" />
-					<span className="text-xs font-medium" style={{ color: "var(--acc)" }}>会话</span>
-					<span className="text-[11px]" style={{ color: "var(--fg-faint)" }}>会话随工作区隔离</span>
-					<div className="ml-auto"><ModelPicker /></div>
-				<button
-					onClick={() => void s.abort()}
-					disabled={!busy}
-					className="flex items-center gap-1 rounded border px-2 py-0.5 hover:bg-[var(--bg2)] disabled:opacity-40"
-					style={{ borderColor: "var(--red)", color: "var(--red)" }}
-				>
-					<Icon name="ri-stop-circle-line" size={12} />
-					停止
-				</button>
-				<button
-					onClick={() => void s.rebuild()}
-					className="flex items-center gap-1 rounded border px-2 py-0.5 hover:bg-[var(--bg2)]"
-					style={{ borderColor: "var(--line)", color: "var(--fg-dim)" }}
-				>
-					<Icon name="ri-history-line" size={12} />
-					重建会话
-				</button>
-			</div>
-
 			<div ref={feedRef} className="flex-1 overflow-y-auto px-5 py-4">
 				<div className="mx-auto flex max-w-[860px] flex-col gap-3">
 					{s.chat.messages.length === 0 && !s.chat.streaming && !s.project && (
@@ -359,7 +332,27 @@ export function ChatPanel() {
 						style={{ color: "var(--fg)" }}
 					/>
 					<div className="flex items-center gap-2">
+						<ModelPicker />
 						<span className="text-[11px]" style={{ color: "var(--fg-faint)" }}>seq {s.lastSeq}</span>
+						<button
+							title="重建会话(崩溃恢复)"
+							onClick={() => void s.rebuild()}
+							className="ml-auto flex h-7 w-7 items-center justify-center rounded hover:bg-[var(--bg2)]"
+							style={{ color: "var(--fg-faint)" }}
+						>
+							<Icon name="ri-history-line" size={14} />
+						</button>
+						{busy && (
+							<button
+								title="停止当前轮次"
+								onClick={() => void s.abort()}
+								className="flex items-center gap-1 rounded border px-2.5 py-1 text-[11px] hover:bg-[var(--bg2)]"
+								style={{ borderColor: "var(--red)", color: "var(--red)" }}
+							>
+								<Icon name="ri-stop-circle-line" size={12} />
+								停止
+							</button>
+						)}
 						<button
 							onClick={() => {
 								const t = input;
@@ -367,7 +360,7 @@ export function ChatPanel() {
 								void s.send(t);
 							}}
 							disabled={busy || !input.trim()}
-							className="jide-btn ml-auto px-3 py-1"
+							className="jide-btn px-3 py-1"
 						>
 							发送
 							<Icon name="ri-send-plane-fill" size={12} />
