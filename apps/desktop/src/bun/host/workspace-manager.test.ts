@@ -159,3 +159,44 @@ describe("计划域(W5 联动)", () => {
 		expect(events.filter((e) => e.type === "plan.updated").length).toBeGreaterThanOrEqual(3);
 	});
 });
+
+describe("工作区血缘(P3.2)", () => {
+	test("stacked 创建:基点 = 父分支 HEAD;元数据持久化并随枚举带出;有子级时父级删除被拒", async () => {
+		const { ws } = fresh();
+		const opened = await ws.openProject(projectDir);
+		expect(opened.opened).toBe(true);
+		ws.trustProject(projectId);
+
+		const parent = await ws.createWorktree(projectId, "feat-parent", { source: "user" });
+		expect(parent.ok).toBe(true);
+		if (!parent.ok) return;
+		// 父分支推进一格(子级基点应随之)
+		writeFileSync(join(parent.path, "p.txt"), "p");
+		await ws.commitAll(parent.workspaceId, "parent work", false);
+
+		const child = await ws.createWorktree(projectId, "feat-child", { parentWorkspaceId: parent.workspaceId });
+		expect(child.ok).toBe(true);
+		if (!child.ok) return;
+
+		const list = await ws.listWorkspaces(projectId);
+		const childInfo = list.find((w) => w.id === child.workspaceId);
+		expect(childInfo?.parentWorkspaceId).toBe(parent.workspaceId);
+		expect(childInfo?.source).toBe("stack");
+		expect(childInfo?.baseRef).toBe(parent.branch);
+
+		// 持久化:全新实例读同一 projects.json 仍带血缘
+		const ws2 = new WorkspaceManager(join(root, "runtime"));
+		const list2 = await ws2.listWorkspaces(projectId);
+		expect(list2.find((w) => w.id === child.workspaceId)?.parentWorkspaceId).toBe(parent.workspaceId);
+
+		// 守卫:子级存在 → 父级删除被拒
+		const rmParent = await ws.removeWorktree(projectId, parent.workspaceId);
+		expect(rmParent.ok).toBe(false);
+		if (!rmParent.ok) expect(rmParent.error).toContain("子工作区");
+
+		// 移除子级 → 父级可删,元数据一并清理
+		expect((await ws.removeWorktree(projectId, child.workspaceId)).ok).toBe(true);
+		expect((await ws.listWorkspaces(projectId)).find((w) => w.id === child.workspaceId)).toBeUndefined();
+		expect((await ws.removeWorktree(projectId, parent.workspaceId)).ok).toBe(true);
+	}, 30000);
+});

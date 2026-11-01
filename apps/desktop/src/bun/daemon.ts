@@ -671,8 +671,8 @@ const handlers = {
 			workspaces: list.map((w) => ({ id: w.id, kind: w.kind, branch: w.branch, path: w.path, baseRef: w.baseRef })),
 		};
 	},
-	"workspace.create": async ({ projectId, name, fromRef }: any) => {
-		const r = await workspaces.createWorktree(projectId, name, fromRef);
+	"workspace.create": async ({ projectId, name, fromRef, parentWorkspaceId }: any) => {
+		const r = await workspaces.createWorktree(projectId, name, { fromRef, parentWorkspaceId, source: parentWorkspaceId ? "stack" : "user" });
 		if (!r.ok) return { ok: false, error: r.error };
 		try {
 			const rec = workspaces.getProject(projectId);
@@ -694,6 +694,41 @@ const handlers = {
 	"workspace.switch": async ({ projectId, workspaceId }: any) => {
 		const r = await workspaces.switchWorkspace(projectId, workspaceId);
 		return r.ok ? { ok: true, activeWorkspaceId: r.activeWorkspaceId } : { ok: false, error: r.error };
+	},
+	/* ---- P3.2:用户提交与评审入队(合并走 W6 门禁;stacked 按血缘) ---- */
+	"git.commitAll": async ({ workspaceId, message }: any) => {
+		try {
+			const r = await workspaces.commitAll(workspaceId, String(message ?? "").trim(), false);
+			if (!r.ok) return { ok: false, error: r.error };
+			return { ok: true, sha: r.sha, message: r.message };
+		} catch (err: any) {
+			return { ok: false, error: String(err?.message ?? err) };
+		}
+	},
+	"review.enqueueCommit": async ({ workspaceId, sha, message }: any) => {
+		try {
+			const projectId = workspaceId.split(":")[0];
+			const info = workspaces.getWorkspace(projectId, workspaceId);
+			if (!info?.branch || info.branch === "(detached)") return { ok: false, error: "工作区分支不可用" };
+			if (info.kind === "default") return { ok: false, error: "Default 工作区即主线,无需送审" };
+			// sha 缺省 = 工作区分支当前 HEAD
+			let headSha = sha as string | undefined;
+			if (!headSha) {
+				const log = await workspaces.gitLog(workspaceId, 1);
+				if (!log.ok || !log.commits.length) return { ok: false, error: "分支无提交,无内容可送审" };
+				headSha = log.commits[0].sha;
+			}
+			// 血缘:stacked 子工作区以父分支为基分支(评审合链自底向上)
+			const meta = workspaces.getProject(projectId)?.worktrees?.[workspaceId];
+			let baseBranch: string | undefined;
+			if (meta?.parentWorkspaceId) {
+				baseBranch = workspaces.getWorkspace(projectId, meta.parentWorkspaceId)?.branch;
+			}
+			const item = review.enqueueCommit(workspaceId, info.branch, headSha, message ?? `工作区送审:${info.branch}`, { baseBranch });
+			return { ok: true, itemId: item.id };
+		} catch (err: any) {
+			return { ok: false, error: String(err?.message ?? err) };
+		}
 	},
 
 	/* ---------- 文件 ---------- */

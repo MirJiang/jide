@@ -18,6 +18,19 @@ export interface ProjectRecord {
 	name: string;
 	trusted: boolean;
 	activeWorkspaceId: string | null;
+	/** worktree 血缘元数据(P3:stacked 语义;workspace 本体由 git 枚举,元数据在此持久化) */
+	worktrees?: Record<string, WorktreeMeta>;
+}
+
+/** worktree 血缘(P3.2):父工作区/创建基点/来源 */
+export interface WorktreeMeta {
+	/** 父工作区 id(stacked 子工作区);缺省 = 基于主线 */
+	parentWorkspaceId?: string;
+	/** 创建基点(分支名或 ref) */
+	baseRef?: string;
+	/** 创建来源:user = 用户手动;stack = 父子堆叠;race/spec/auto = 自动化域 */
+	source: "user" | "stack" | "race" | "spec" | "auto";
+	createdAt: number;
 }
 
 export interface WorkspaceInfo {
@@ -26,6 +39,10 @@ export interface WorkspaceInfo {
 	branch: string;
 	path: string;
 	baseRef?: string;
+	/** 血缘:父工作区(stacked) */
+	parentWorkspaceId?: string;
+	/** 血缘:创建来源 */
+	source?: WorktreeMeta["source"];
 }
 
 interface TrustStore {
@@ -145,7 +162,7 @@ export class WorkspaceManager {
 		return r.code === 0 ? r.out : null;
 	}
 
-	/** 枚举工作区:Default(仓库根)+ 全部 worktree */
+	/** 枚举工作区:Default(仓库根)+ 全部 worktree;血缘元数据合并自 projects.json */
 	async listWorkspaces(projectId: string): Promise<WorkspaceInfo[]> {
 		const rec = this.store.projects[projectId];
 		if (!rec) return [];
@@ -162,11 +179,16 @@ export class WorkspaceManager {
 					? branchLine.slice("branch refs/heads/".length)
 					: (await this.currentBranch(wtPath)) ?? "(detached)";
 				const isDefault = wtPath.replace(/\\/g, "/") === rec.root.replace(/\\/g, "/");
+				const id = isDefault ? `${projectId}:default` : `${projectId}:wt:${branch}`;
+				const meta = !isDefault ? rec.worktrees?.[id] : undefined;
 				result.push({
-					id: isDefault ? `${projectId}:default` : `${projectId}:wt:${branch}`,
+					id,
 					kind: isDefault ? "default" : "worktree",
 					branch,
 					path: wtPath,
+					...(meta?.baseRef ? { baseRef: meta.baseRef } : {}),
+					...(meta?.parentWorkspaceId ? { parentWorkspaceId: meta.parentWorkspaceId } : {}),
+					...(meta ? { source: meta.source } : {}),
 				});
 			}
 		}
@@ -198,18 +220,32 @@ export class WorkspaceManager {
 		return null;
 	}
 
-	/** W3:创建隔离工作区(git worktree add)。仅已信任项目。 */
-	async createWorktree(projectId: string, name: string, fromRef?: string) {
+	/** W3/P3.2:创建隔离工作区(git worktree add)。opts.parentWorkspaceId = stacked 子工作区(基点 = 父分支 HEAD)。仅已信任项目。 */
+	async createWorktree(
+		projectId: string,
+		name: string,
+		opts: { fromRef?: string; parentWorkspaceId?: string; source?: WorktreeMeta["source"] } = {},
+	) {
 		const rec = this.store.projects[projectId];
 		if (!rec) return { ok: false as const, error: "项目未打开" };
 		const trust = this.requireTrusted(projectId);
 		if (!trust.ok) return { ok: false as const, error: trust.error };
 
+		let ref = opts.fromRef;
+		if (!ref && opts.parentWorkspaceId) {
+			// stacked 血缘:基点 = 父工作区分支当前 HEAD(随父推进可 rebase/合链)
+			const pid = opts.parentWorkspaceId.split(":")[0];
+			const pInfo = (await this.listWorkspaces(pid)).find((w) => w.id === opts.parentWorkspaceId);
+			if (!pInfo) return { ok: false as const, error: `父工作区不存在:${opts.parentWorkspaceId}` };
+			if (!pInfo.branch || pInfo.branch === "(detached)") return { ok: false as const, error: "父工作区分支不可用(detached)" };
+			ref = pInfo.branch;
+		}
+		const baseRef = ref ?? "HEAD";
+
 		const branch = `jide/${name}`;
 		const parent = join(rec.root, "..");
 		const wtPath = join(parent, `${basename(rec.root)}-wt-${name}`);
-		const ref = fromRef ?? "HEAD";
-		const r = await runGit(rec.root, ["worktree", "add", "-b", branch, wtPath, ref]);
+		const r = await runGit(rec.root, ["worktree", "add", "-b", branch, wtPath, baseRef]);
 		if (r.code !== 0) return { ok: false as const, error: `git worktree add 失败:${r.err || r.out}` };
 
 		// W3:创建即复制工作区上下文(检查项 .jide/checks 与记忆 .memory —— 未提交的也带上)
@@ -220,23 +256,38 @@ export class WorkspaceManager {
 				copyDirSync(src, join(wtPath, rel));
 			} catch { /* 复制失败不阻塞创建 */ }
 		}
+		// P3.2:血缘落盘(projects.json)
+		const workspaceId = `${projectId}:wt:${branch}`;
+		if (!rec.worktrees) rec.worktrees = {};
+		rec.worktrees[workspaceId] = {
+			...(opts.parentWorkspaceId ? { parentWorkspaceId: opts.parentWorkspaceId } : {}),
+			baseRef,
+			source: opts.source ?? (opts.parentWorkspaceId ? "stack" : "user"),
+			createdAt: Date.now(),
+		};
+		this.persist();
 		await this.listWorkspaces(projectId); // 刷缓存
-		this.emit({ type: "host.log", level: "info", message: `隔离工作区已创建:${branch}` });
+		this.emit({ type: "host.log", level: "info", message: `隔离工作区已创建:${branch}${opts.parentWorkspaceId ? `(基于 ${opts.parentWorkspaceId.split(":")[1] ?? opts.parentWorkspaceId})` : ""}` });
 		return {
 			ok: true as const,
-			workspaceId: `${projectId}:wt:${branch}`,
+			workspaceId,
 			path: wtPath,
 			branch,
 		};
 	}
 
-	/** P3:移除 worktree(竞赛落选清理/手动清理),连带删除其分支;Default 不可移除 */
+	/** P3:移除 worktree(竞赛落选清理/手动清理),连带删除其分支;Default 不可移除;有子工作区时拒绝 */
 	async removeWorktree(projectId: string, workspaceId: string): Promise<{ ok: true } | { ok: false; error: string }> {
 		const rec = this.store.projects[projectId];
 		if (!rec) return { ok: false as const, error: "项目未打开" };
 		const info = (await this.listWorkspaces(projectId)).find((w) => w.id === workspaceId);
 		if (!info) return { ok: false as const, error: "工作区不存在" };
 		if (info.kind === "default") return { ok: false as const, error: "Default 工作区不可移除" };
+		// 血缘守卫:存在未清理的子工作区 → 先处理子级(否则子级 rebase 目标随父分支消失)
+		const children = Object.entries(rec.worktrees ?? {}).filter(([, m]) => m.parentWorkspaceId === workspaceId);
+		if (children.length) {
+			return { ok: false as const, error: `存在 ${children.length} 个子工作区,先移除/合入子级再删父级` };
+		}
 		const rm = await runGit(rec.root, ["worktree", "remove", "--force", info.path]);
 		if (rm.code !== 0) return { ok: false as const, error: `worktree remove 失败:${rm.err || rm.out}` };
 		if (info.branch && info.branch !== "(detached)") {
@@ -245,6 +296,10 @@ export class WorkspaceManager {
 				// 删分支失败不阻塞(worktree 已移除),仅记录
 				this.emit({ type: "host.log", level: "warn", message: `分支删除失败(${info.branch}):${bd.err || bd.out}` });
 			}
+		}
+		if (rec.worktrees) {
+			delete rec.worktrees[workspaceId];
+			this.persist();
 		}
 		await this.listWorkspaces(projectId); // 刷缓存
 		this.emit({ type: "host.log", level: "info", message: `工作区已移除:${info.branch ?? info.path}` });

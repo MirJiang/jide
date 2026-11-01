@@ -426,13 +426,16 @@ export interface HostRequestShapes {
 						branch: string;
 						path: string;
 						baseRef?: string;
+						/** P3.2 血缘:父工作区(stacked)/创建来源 */
+						parentWorkspaceId?: string;
+						source?: "user" | "stack" | "race" | "spec" | "auto";
 					}>;
 			  }
 			| { ok: false; error: string };
 	};
 	/** 创建隔离工作区(worktree,W3)。仅已信任项目。 */
 	"workspace.create": {
-		params: { projectId: string; name: string; fromRef?: string };
+		params: { projectId: string; name: string; fromRef?: string; /** P3.2 stacked:父工作区(基点 = 父分支 HEAD) */ parentWorkspaceId?: string };
 		response:
 			| { ok: true; workspaceId: string; path: string; branch: string }
 			| { ok: false; error: string };
@@ -441,6 +444,16 @@ export interface HostRequestShapes {
 	"workspace.switch": {
 		params: { projectId: string; workspaceId: string };
 		response: { ok: true; activeWorkspaceId: string } | { ok: false; error: string };
+	};
+	/** P3.2:当前工作区成果提交(用户语义,Default 也可提交) */
+	"git.commitAll": {
+		params: { workspaceId: string; message: string };
+		response: { ok: true; sha: string; message: string } | { ok: false; error: string };
+	};
+	/** P3.2:把工作区分支头(或指定 sha)提交进评审队列,人工批准后合入主线(stacked 按血缘 rebase) */
+	"review.enqueueCommit": {
+		params: { workspaceId: string; sha?: string; message?: string };
+		response: { ok: true; itemId: string } | { ok: false; error: string };
 	};
 
 	/* ---------------- 文件域(编辑器后端) ---------------- */
@@ -736,6 +749,8 @@ export interface HostRequestShapes {
 						/** commit 型:来源工作区与分支 */
 						workspaceId?: string;
 						branch?: string;
+						/** P3.2:基分支(stacked 血缘;rebase 目标) */
+						baseBranch?: string;
 						state: "pending" | "approved" | "asked" | "ignored";
 					}>;
 			  }

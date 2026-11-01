@@ -242,7 +242,7 @@ describe("W6 评审队列:门禁合并", () => {
 		ws.bindEmitter(emit);
 		const opened = await ws.openProject(projDir);
 		if (opened.opened) ws.trustProject(opened.project.id);
-		const created = await ws.createWorktree(opened.opened ? opened.project.id : "x", "m3", "HEAD");
+		const created = await ws.createWorktree(opened.opened ? opened.project.id : "x", "m3", { fromRef: "HEAD" });
 		expect(created.ok).toBe(true);
 		if (!created.ok) return;
 
@@ -274,6 +274,79 @@ describe("W6 评审队列:门禁合并", () => {
 		const askR = await rq.decide(items2[0].id, "ask");
 		expect(askR.ok).toBe(true);
 		expect(rq.pending()).toHaveLength(0);
+	}, 30000);
+});
+
+describe("P3.2 stacked 血缘合并流", () => {
+	test("入队去重;父未合入 → 子审批被守卫拒绝;父合入后子经 rebase 合并;主线继续前进仍可合", async () => {
+		const projDir = join(root, "stacked-repo");
+		mkdirSync(projDir, { recursive: true });
+		const g = async (cwd: string, ...args: string[]) => {
+			const p = Bun.spawn(["git", "-C", cwd, ...args], { stdout: "pipe", stderr: "pipe" });
+			const out = await new Response(p.stdout).text();
+			const code = await p.exited;
+			if (code !== 0) throw new Error(`git ${args.join(" ")}: ${out}`);
+			return out.trim();
+		};
+		await g(projDir, "init", "-b", "main");
+		writeFileSync(join(projDir, "base.txt"), "b");
+		await g(projDir, "add", "-A");
+		await g(projDir, "-c", "user.name=T", "-c", "user.email=t@t", "commit", "-m", "init");
+
+		const ws = new WorkspaceManager(join(root, "runtime-stacked"));
+		ws.bindEmitter(emit);
+		const opened = await ws.openProject(projDir);
+		if (!opened.opened) throw new Error("项目未打开");
+		const pid = opened.project.id;
+		ws.trustProject(pid);
+
+		const parent = await ws.createWorktree(pid, "stack-parent", { source: "user" });
+		expect(parent.ok).toBe(true);
+		if (!parent.ok) return;
+		const child = await ws.createWorktree(pid, "stack-child", { parentWorkspaceId: parent.workspaceId });
+		expect(child.ok).toBe(true);
+		if (!child.ok) return;
+		// 血缘带出
+		const childInfo = (await ws.listWorkspaces(pid)).find((w) => w.id === child.workspaceId);
+		expect(childInfo?.parentWorkspaceId).toBe(parent.workspaceId);
+		expect(childInfo?.source).toBe("stack");
+		expect(childInfo?.baseRef).toBe(parent.branch);
+
+		// 双方各做一次提交
+		writeFileSync(join(parent.path, "p.txt"), "p");
+		const pc = await ws.commitAll(parent.workspaceId, "parent work", false);
+		expect(pc.ok).toBe(true);
+		writeFileSync(join(child.path, "c.txt"), "c");
+		const cc = await ws.commitAll(child.workspaceId, "child work", false);
+		expect(cc.ok).toBe(true);
+
+		const rq = new ReviewQueue(ws, join(root, "runtime-stacked"));
+		rq.bindEmitter(emit);
+
+		// 子先送审(baseBranch = 父分支):父未合入 → 守卫拒绝,条目回 pending
+		const childItem = rq.enqueueCommit(child.workspaceId, child.branch, cc.ok ? cc.sha : "", "child work", { baseBranch: parent.branch });
+		const dup = rq.enqueueCommit(child.workspaceId, child.branch, cc.ok ? cc.sha : "", "child work", { baseBranch: parent.branch });
+		expect(dup.id).toBe(childItem.id); // 幂等去重
+		const guard = await rq.decide(childItem.id, "approve");
+		expect(guard.ok).toBe(false);
+		if (!guard.ok) expect(guard.error).toContain("父分支");
+		expect(rq.pending()).toHaveLength(1);
+
+		// 父送审 → approve → ff 合入主线
+		const parentItem = rq.enqueueCommit(parent.workspaceId, parent.branch, pc.ok ? pc.sha : "", "parent work");
+		const pr = await rq.decide(parentItem.id, "approve");
+		expect(pr.ok).toBe(true);
+		expect(readFileSync(join(projDir, "p.txt"), "utf8")).toBe("p");
+
+		// 主线再前进一格(制造分叉)→ 子审批走 rebase onto 主线头
+		writeFileSync(join(projDir, "main-only.txt"), "m");
+		await g(projDir, "add", "-A");
+		await g(projDir, "-c", "user.name=T", "-c", "user.email=t@t", "commit", "-m", "main advance");
+
+		const cr = await rq.decide(childItem.id, "approve");
+		expect(cr.ok).toBe(true);
+		expect(readFileSync(join(projDir, "c.txt"), "utf8")).toBe("c");
+		expect(readFileSync(join(projDir, "main-only.txt"), "utf8")).toBe("m");
 	}, 30000);
 });
 

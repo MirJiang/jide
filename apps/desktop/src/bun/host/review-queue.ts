@@ -20,6 +20,8 @@ export interface ReviewItem {
 	branch?: string;
 	/** commit 型:要合并的分支头 sha */
 	sha?: string;
+	/** commit 型:该分支的基分支(P3.2 stacked 血缘;rebase 目标,缺省 = 主线) */
+	baseBranch?: string;
 	state: "pending" | "approved" | "asked" | "ignored";
 	createdAt: string;
 }
@@ -93,19 +95,27 @@ export class ReviewQueue {
 		return undefined;
 	}
 
-	/** 计划自动提交入队(commit 型) */
-	enqueueCommit(workspaceId: string, branch: string, sha: string, message: string) {
-		this.push({
+	/** 提交入队(commit 型;同工作区同 sha 的 pending 项幂等去重,返回命中或新建的条目) */
+	enqueueCommit(workspaceId: string, branch: string, sha: string, message: string, opts?: { baseBranch?: string }): ReviewItem {
+		for (const item of this.items.values()) {
+			if (item.kind === "commit" && item.state === "pending" && item.workspaceId === workspaceId && item.sha === sha) {
+				return item;
+			}
+		}
+		const created: ReviewItem = {
 			id: `rv-${this.nextId++}`,
 			kind: "commit",
 			title: message.split("\n")[0],
-			detail: `自动提交 ${sha.slice(0, 7)} · 分支 ${branch}`,
+			detail: `提交 ${sha.slice(0, 7)} · 分支 ${branch}${opts?.baseBranch ? ` · 基于 ${opts.baseBranch}` : ""}`,
 			workspaceId,
 			branch,
 			sha,
+			...(opts?.baseBranch ? { baseBranch: opts.baseBranch } : {}),
 			state: "pending",
 			createdAt: new Date().toISOString(),
-		});
+		};
+		this.push(created);
+		return created;
 	}
 
 	enqueueMemory(workspaceId: string, title: string, detail: string) {
@@ -135,7 +145,9 @@ export class ReviewQueue {
 	/**
 	 * 决策。approve(commit 型)→ 合并进 Default 主分支:
 	 *  - Default 在同一提交或落后(可 ff)→ ff
-	 *  - Default 领先(分叉)→ 先 rebase 隔离分支 onto main,再 ff
+	 *  - Default 领先(分叉)→ 先 rebase 隔离分支 onto 主线头,再 ff
+	 *  - stacked 血缘(P3.2):baseBranch 尚未合入主线 → 拒绝(合链必须自底向上;守卫通过后
+	 *    父内容已在主线,rebase onto 主线头语义安全)
 	 */
 	async decide(id: string, decision: "approve" | "ask" | "ignore", note?: string) {
 		const item = this.items.get(id);
@@ -162,6 +174,19 @@ export class ReviewQueue {
 			return { ok: false as const, error: "项目未找到" };
 		}
 		const mainCwd = rec.root;
+		// 合并目标分支 = 仓库根当前分支(通常 main;不硬编码)
+		const hb = await git(mainCwd, ["rev-parse", "--abbrev-ref", "HEAD"]);
+		const targetBranch = hb.code === 0 && hb.out ? hb.out : "main";
+
+		// stacked 守卫:基分支必须已在主线(merge-base --is-ancestor);否则合链断裂
+		if (item.baseBranch) {
+			const anc = await git(mainCwd, ["merge-base", "--is-ancestor", item.baseBranch, "HEAD"]);
+			if (anc.code !== 0) {
+				item.state = "pending";
+				this.persist();
+				return { ok: false as const, error: `父分支 ${item.baseBranch} 尚未合入主线,请先合入父工作区(stacked 合链自底向上)` };
+			}
+		}
 
 		// 尝试 fast-forward 合并隔离分支
 		let merge = await git(mainCwd, ["merge", "--ff-only", item.branch]);
@@ -172,11 +197,11 @@ export class ReviewQueue {
 				this.persist();
 				return { ok: false as const, error: "隔离工作区不存在" };
 			}
-			const rb = await git(wsInfo.path, ["rebase", "main"]);
+			const rb = await git(wsInfo.path, ["rebase", targetBranch]);
 			if (rb.code !== 0) {
 				item.state = "pending";
 				this.persist();
-				return { ok: false as const, error: `合并失败(rebase):${rb.err || rb.out}` };
+				return { ok: false as const, error: `合并失败(rebase onto ${targetBranch}):${rb.err || rb.out}` };
 			}
 			merge = await git(mainCwd, ["merge", "--ff-only", item.branch]);
 			if (merge.code !== 0) {

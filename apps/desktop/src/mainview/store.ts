@@ -50,6 +50,9 @@ export interface WorkspaceView {
 	kind: "default" | "worktree";
 	branch: string;
 	path: string;
+	/** P3.2 血缘:父工作区(stacked)/创建来源 */
+	parentWorkspaceId?: string;
+	source?: "user" | "stack" | "race" | "spec" | "auto";
 }
 
 export interface ProjectView {
@@ -174,7 +177,9 @@ interface IDEStore {
 	setSettingsOpen(v: boolean): void;
 	saveSettings(patch: Partial<JideSettings>): Promise<void>;
 	switchWorkspace(id: string): Promise<void>;
-	createWorktree(name: string): Promise<void>;
+	createWorktree(name: string, opts?: { stacked?: boolean }): Promise<void>;
+	/** P3.2:提交当前工作区全部变更并送入评审队列(人工批准后合入主线);返回错误文本或 null */
+	commitAndReview(message: string): Promise<string | null>;
 
 	setSidebar(v: IDEStore["sidebar"]): void;
 	toggleBottom(v?: boolean): void;
@@ -293,6 +298,8 @@ export const useIDE = create<IDEStore>((set, get) => ({
 				kind: w.kind,
 				branch: w.branch,
 				path: w.path,
+				parentWorkspaceId: w.parentWorkspaceId,
+				source: w.source,
 			}));
 			set({ workspaces: wss, activeWorkspaceId: list.activeWorkspaceId });
 			// 初始会话挂到当前工作区
@@ -364,7 +371,7 @@ export const useIDE = create<IDEStore>((set, get) => ({
 		const list = await client.request("workspace.list", { projectId: project.id });
 		if (list.ok) {
 			set({
-				workspaces: list.workspaces.map((w) => ({ id: w.id, kind: w.kind, branch: w.branch, path: w.path })),
+				workspaces: list.workspaces.map((w) => ({ id: w.id, kind: w.kind, branch: w.branch, path: w.path, parentWorkspaceId: w.parentWorkspaceId, source: w.source })),
 			});
 		}
 		// W4 原子换入:重建会话 + 终端清空 + 计划随工作区恢复
@@ -388,15 +395,30 @@ export const useIDE = create<IDEStore>((set, get) => ({
 		void get().refreshGit();
 	},
 
-	async createWorktree(name) {
-		const { client, project } = get();
+	async createWorktree(name, opts?: { stacked?: boolean }) {
+		const { client, project, activeWorkspaceId } = get();
 		if (!client || !project) return;
-		const r = await client.request("workspace.create", { projectId: project.id, name });
+		const r = await client.request("workspace.create", {
+			projectId: project.id,
+			name,
+			...(opts?.stacked && activeWorkspaceId ? { parentWorkspaceId: activeWorkspaceId } : {}),
+		});
 		if (r.ok) {
 			await get().switchWorkspace(r.workspaceId);
 		} else {
 			set((s) => ({ logs: [...s.logs, `创建工作区失败:${r.error}`] }));
 		}
+	},
+
+	async commitAndReview(message) {
+		const { client, activeWorkspaceId } = get();
+		if (!client || !activeWorkspaceId) return "未连接宿主或未选工作区";
+		const c = await client.request("git.commitAll", { workspaceId: activeWorkspaceId, message });
+		if (!c.ok) return c.error;
+		const e = await client.request("review.enqueueCommit", { workspaceId: activeWorkspaceId });
+		if (!e.ok) return e.error;
+		void get().refreshGit();
+		return null;
 	},
 
 	setSidebar(v) {

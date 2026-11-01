@@ -93,6 +93,53 @@ function FileTree() {
 	);
 }
 
+/** P3.2:工作区成果提交并送审(评审队列 → 人工批准合入主线) */
+function CommitReviewRow() {
+	const s = useIDE();
+	const [msg, setMsg] = useState("");
+	const [busy, setBusy] = useState(false);
+	const [err, setErr] = useState("");
+	const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
+	if (!ws || ws.kind !== "worktree") return null;
+	return (
+		<div className="px-3 pt-3 pb-1">
+			<div className="mb-1 text-xs font-medium">提交并送审</div>
+			{ws.parentWorkspaceId && (
+				<div className="mb-1 text-[10.5px]" style={{ color: "var(--purple)" }}>
+					⎇ stacked:需先合入父分支({s.workspaces.find((x) => x.id === ws.parentWorkspaceId)?.branch ?? "父工作区"})
+				</div>
+			)}
+			<div className="flex gap-1.5">
+				<input
+					value={msg}
+					onChange={(e) => setMsg(e.target.value)}
+					placeholder="提交信息…"
+					className="min-w-0 flex-1 rounded border bg-transparent px-2 py-1 text-xs outline-none"
+					style={{ borderColor: "var(--line2)", color: "var(--fg)" }}
+				/>
+				<button
+					className="jide-btn px-2 py-1 text-xs"
+					disabled={!msg.trim() || busy}
+					onClick={async () => {
+						setBusy(true);
+						setErr("");
+						const e = await s.commitAndReview(msg.trim());
+						setBusy(false);
+						if (e) setErr(e);
+						else setMsg("");
+					}}
+				>
+					送审
+				</button>
+			</div>
+			{err && (
+				<div className="mt-1 text-[10.5px]" style={{ color: "var(--red)" }}>{err}</div>
+			)}
+			<div className="mt-0.5 text-[10px]" style={{ color: "var(--fg-faint)" }}>进评审队列,人工批准后合入主线(W6 门禁)</div>
+		</div>
+	);
+}
+
 function GitPanel() {
 	const s = useIDE();
 	return (
@@ -114,6 +161,7 @@ function GitPanel() {
 			{s.git.changes.length === 0 && (
 				<div className="px-3 py-1 text-[11px]" style={{ color: "var(--fg-faint)" }}>无变更</div>
 			)}
+			<CommitReviewRow />
 			<div className="px-3 pt-3 pb-1 text-xs font-medium">提交记录</div>
 			{s.git.commits.map((c) => (
 				<div key={c.shortSha} className="flex gap-2 px-2 py-1.5 hover:bg-[var(--bg2)]" style={{ marginLeft: 2 }}>
