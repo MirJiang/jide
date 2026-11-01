@@ -66,16 +66,21 @@ Q3 已拍板:automations 建在 daemon 上。按完整功能开发(不搞最小�
 
 ## P3 Fleet 与任务域(Orca 件 × HiFox 语义,~2 周)
 
-1. **Fan-out 竞赛**(Orca 招牌):同一 prompt 播 N 个隔离 worktree(可混配模型)→ 并排对比(各 Worker 的 test/检查项得分 + diff 视图)→ 人选优,落选分支一键清理。**判优已定(Q2)= 检查项自动打分 + 人工终审**。□ 一拖三修复同一 bug,面板并列三份"测试通过率+检查项+diff",选一合入
-2. **Worktree 血缘与合并流**:child/stacked worktree(Orca lineage 语义),合并走评审队列门禁(已有 B9)
-3. **任务卡视图**(HiFox 语义本地化):任务→Worker→验证→人收 的看板;数据源=orchestration 数据(pi session tree + plan + 评审队列),不引入团队协作
-4. **Router 化 automations**:P1.5 的 automations 触发器从"直接建会话"升级为"提交给 Router 拆解分派"(定时/事件 → Router → Worker 池),与 P2 无缝衔接
+1. **Fan-out 竞赛**(Orca 招牌):同一 prompt 播 N 个隔离 worktree(可混配模型)→ 并排对比(各 Worker 的 test/检查项得分 + diff 视图)→ 人选优,落选分支一键清理。**判优已定(Q2)= 检查项自动打分 + 人工终审**。☑ 一拖三修复同一 bug,面板并列三份"测试通过率+检查项+diff",选一合入(b95eeb2)
+2. ☑ **Worktree 血缘与合并流**(2026-11-01):stacked 子工作区(parentWorkspaceId,血缘落 projects.json)、父级有子级删除守卫、送审自动带 baseBranch、合链自底向上守卫(父未合入拒批)、rebase onto 主线头;用户提交送审链路(git.commitAll + review.enqueueCommit + GitPanel 送审按钮);workspace.remove RPC
+3. ☑ **任务卡视图**(2026-11-01):TaskManager 聚合 Worker 池/竞赛/自动化运行(tasks.json 持久化,重启中断标注),聊天轮按发起方归组一张卡;KanbanBoard 四列(运行中/待收口/已完成/失败·终止)内容区页签 + WorkflowDock 入口;**兼 P2 的 Worker 面板**(卡内 Worker 实时态,3s 轮询)
+4. ☑ **Router 化 automations**(2026-11-01):automation `dispatch:"router"`(新建默认)→ 常驻 Router 会话(ensureRouter,懒创建亡重建)收任务书 → spawn_worker 委派指定工作区 → wait 收束 → 汇总;spawn 窗口无 Worker/Router 异常/prompt 挂起 → 回退直执(fallback),存量 direct 不变
+
+## P2 挂起项收口(2026-11-01)
+
+- ☑ **Router 常驻独立会话**:双轨形态(用户拍板)——聊天会话照旧(可直聊可委派),常驻 Router 服务自动来源(automations);回喂改为按 Worker 的 routerSessionId 精准回喂,旧单槽保留兜底
+- ☑ **UI Worker 面板**:由任务卡看板承载(卡内即 Worker 列表)
 
 ## P4 规模化形态(远期,不承诺时间)
 
 - ~~Daemon 化~~ **已前移至 P1.5(Q3 拍板)**
-- **Remote runtime / 手机 thin client**(Orca mobile,E2EE):daemon 化之后的自然延伸
-- **长期记忆**(DeepSeek 未解难题):跨周/月任务上下文恢复,记忆域从"规范沉淀"向"任务经历"扩展,git 即同步(维持非目标:账号云同步)
+- ~~**长期记忆**~~ **已前移至 P3 完成(2026-11-01)**:任务经历第 4 写入通道——任务卡终态自动写 `<项目根>/.memory/project/experience.md`(插最前,上限 100 条,不走建议卡);注入新增经历层(0.3K,与项目层分离防双计);recallKeywords 自然覆盖 → 跨周/月任务上下文恢复
+- **Remote runtime / 手机 thin client**(Orca mobile,E2EE):daemon 化之后的自然延伸(唯一未启形的 P4 项)
 
 ## 非照搬清单(边界,并入 business-design §8)
 
@@ -100,3 +105,15 @@ Q3 已拍板:automations 建在 daemon 上。按完整功能开发(不搞最小�
 | Q2 | Fan-out 判优 | **检查项自动打分 + 人工终审** |
 | Q3 | Automations 宿主 cron vs daemon | **建在 daemon 上**——daemon 化提前为 P1.5 |
 | Q4 | Router/Worker 模型 | 用户已配置 DeepSeek V4.1 Flash(`cc-switch-deep-seek`);Router 可用同库,后续按需增配轻模型 |
+
+## 交付记录:2026-11-01 剩余项一次性收口(五批提交)
+
+| 批次 | 内容 | commit |
+|---|---|---|
+| 一 | Router 常驻会话(ensureRouter)+ 按 Worker 回喂 + automations dispatch=router(回退直执) | 24b476b |
+| 二 | worktree 血缘(stacked/守卫/元数据)+ 评审合链(baseBranch/rebase 主线头)+ 用户提交送审链路 | 1d67dda |
+| 三 | TaskManager + KanbanBoard 任务卡看板(兼 Worker 面板)+ flaky 修复 | (批次三) |
+| 四 | 任务经历第 4 写入通道 + 注入经历层(长期记忆) | (批次四) |
+| 五 | 离线/live 验收 e2e + extensionsDir 源码态解析修复 + 桥 params.workspaceId 兜底 + workspace.remove RPC | (批次五) |
+
+**验收实证(全绿)**:136/136 单测;`e2e-tasks-acceptance.ts`(stacked 合链+守卫 / git.commitAll+送审 / Router 分派链 / 任务卡+经历 / WS 事件);`e2e-acceptance-live.ts`(真实 DeepSeek:automation Router 分派全链 10s → 卡 done → 经历落盘;自然语言拆 3 子任务并发 7s 全 done 归组一卡)——P2 验收三条全达成,daemon 不依赖 app 运行 = P1.5「关 app 照跑」结构性实证。附修:race 假 verify 偶发(include→锚定结尾,10× 压测稳);批注 pi 对未知 provider 回落默认模型。
