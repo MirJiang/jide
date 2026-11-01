@@ -140,14 +140,14 @@ select:focus-visible {
 	app-region: no-drag;
 }
 
-/* 窗口控制按钮(右侧三条) */
+/* 窗口控制按钮(右侧三条;通高无缝贴边,原生 chrome 风格) */
 .win-btn {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	width: 42px;
-	height: 30px;
-	border-radius: 7px;
+	width: 46px;
+	height: 100%;
+	border-radius: 0;
 	color: var(--fg-dim);
 	font-size: 11px;
 	transition: background 0.12s ease, color 0.12s ease;

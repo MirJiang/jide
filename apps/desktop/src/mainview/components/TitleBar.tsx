@@ -294,7 +294,7 @@ export function TitleBar() {
 				</button>
 			</div>
 
-			<div className="jide-no-drag flex items-center gap-2 pr-1">
+			<div className="jide-no-drag flex items-center gap-2">
 				<button
 					className="jide-btn-ghost px-2.5 py-1.5 text-[13px]"
 					title="设置"
@@ -345,8 +345,8 @@ export function TitleBar() {
 					)}
 				</div>
 
-				{/* 窗口控制(无边框自定义 chrome) */}
-				<div className="ml-1 flex items-center gap-1">
+				{/* 窗口控制(无边框自定义 chrome):通高无缝贴边;负右边距抵消顶栏 px-1.5 */}
+				<div className="-mr-1.5 flex items-stretch self-stretch">
 					<button className="win-btn" title="最小化" onClick={() => void winCtl("minimize")}>
 						<Icon name="ri-subtract-line" size={13} />
 					</button>
