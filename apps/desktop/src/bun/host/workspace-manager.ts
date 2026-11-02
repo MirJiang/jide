@@ -11,7 +11,6 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 import type { EmitFn } from "./agent-host";
-import { realpathSync } from "node:fs";
 import { spawn } from "../../runtime";
 
 export interface ProjectRecord {
@@ -73,15 +72,6 @@ async function runGit(cwd: string, args: string[]): Promise<{ code: number; out:
 	]);
 	const code = await proc.exited;
 	return { code, out: out.trim(), err: err.trim() };
-}
-
-/** 路径同一性:realpath 归一化(消 8.3 短路径/大小写/分隔符差异);不可解析时回退字符串比对 */
-function samePath(a: string, b: string): boolean {
-	try {
-		return realpathSync(a).replace(/\\/g, "/").toLowerCase() === realpathSync(b).replace(/\\/g, "/").toLowerCase();
-	} catch {
-		return a.replace(/\\/g, "/").toLowerCase() === b.replace(/\\/g, "/").toLowerCase();
-	}
 }
 
 export class WorkspaceManager {
@@ -180,8 +170,11 @@ export class WorkspaceManager {
 		const r = await runGit(rec.root, ["worktree", "list", "--porcelain"]);
 		const result: WorkspaceInfo[] = [];
 		if (r.code === 0) {
-			for (const block of r.out.split("\n\n")) {
-				const lines = block.split("\n").filter(Boolean);
+			const blocks = r.out
+				.split("\n\n")
+				.map((block) => block.split("\n").filter(Boolean))
+				.filter((lines) => lines.length > 0);
+			for (const [idx, lines] of blocks.entries()) {
 				const pathLine = lines.find((l) => l.startsWith("worktree "));
 				if (!pathLine) continue;
 				const wtPath = pathLine.slice("worktree ".length);
@@ -189,9 +182,9 @@ export class WorkspaceManager {
 				const branch = branchLine
 					? branchLine.slice("branch refs/heads/".length)
 					: (await this.currentBranch(wtPath)) ?? "(detached)";
-				// isDefault 用 realpath 归一化比对:CI/短路径环境(%TEMP%=RUNNER~1 等)下
-				// git 报告的 worktree 路径与记录的 root 字符串不一致,纯字符串比对会误分类
-				const isDefault = samePath(wtPath, rec.root);
+				// git 文档保证:worktree list 首块恒为主工作树 —— 用块序分类,不做路径
+				// 字符串/realpath 比对(CI runner 上路径形态差异曾致 Default 误分类)
+				const isDefault = idx === 0;
 				const id = isDefault ? `${projectId}:default` : `${projectId}:wt:${branch}`;
 				const meta = !isDefault ? rec.worktrees?.[id] : undefined;
 				result.push({
