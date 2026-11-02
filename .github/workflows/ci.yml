@@ -22,6 +22,8 @@ jobs:
           bun-version: latest
       - name: Install
         run: bun install --frozen-lockfile
+      - name: Generate design tokens (gitignored 生成物,fresh checkout 必跑)
+        run: bun run tokens:generate
       - name: Configure git identity (worktree/commit 测试需要)
         run: |
           git config --global user.name ci
@@ -42,6 +44,8 @@ jobs:
           bun-version: latest
       - name: Install
         run: bun install --frozen-lockfile
+      - name: Generate design tokens (gitignored 生成物,fresh checkout 必跑)
+        run: bun run tokens:generate
       - name: Unit tests (contracts + ui tokens)
         run: bun test packages/contracts packages/jide-ui
 
