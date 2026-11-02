@@ -12,7 +12,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        # ubuntu 只跑平台无关包:单测含 Windows 专属用例(reg 注册表/taskkill/Edge/PasswordVault),
+        # 在 linux 必挂(存量问题);全量单测归 windows(项目 Windows 优先)
+        os: [windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -20,10 +22,28 @@ jobs:
           bun-version: latest
       - name: Install
         run: bun install --frozen-lockfile
+      - name: Configure git identity (worktree/commit 测试需要)
+        run: |
+          git config --global user.name ci
+          git config --global user.email ci@example.com
       - name: Unit tests (contracts + host)
-        run: bun test packages/contracts apps/desktop
+        run: bun test packages/contracts packages/jide-ui apps/desktop
       - name: Typecheck
         run: bunx tsc -p packages/contracts && bunx tsc -p apps/desktop --noEmit || true
+
+  # 平台无关包的 linux 冒烟(保留跨平台信号;host 单测含 Windows 专属用例不在此跑)
+  unit-linux-pure:
+    name: unit (ubuntu, platform-agnostic)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install
+        run: bun install --frozen-lockfile
+      - name: Unit tests (contracts + ui tokens)
+        run: bun test packages/contracts packages/jide-ui
 
   # Electron 打包冒烟仅在 Windows 跑(DR-TS-05;daemon/ext 随 extraResources)
   package-smoke:
