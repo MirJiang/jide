@@ -11,6 +11,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 import type { EmitFn } from "./agent-host";
+import { spawn } from "../../runtime";
 
 export interface ProjectRecord {
 	id: string;
@@ -60,7 +61,7 @@ function copyDirSync(src: string, dest: string) {
 }
 
 async function runGit(cwd: string, args: string[]): Promise<{ code: number; out: string; err: string }> {
-	const proc = Bun.spawn(["git", "-C", cwd, ...args], {
+	const proc = spawn(["git", "-C", cwd, ...args], {
 		stdout: "pipe",
 		stderr: "pipe",
 		env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C" },

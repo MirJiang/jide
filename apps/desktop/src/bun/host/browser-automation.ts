@@ -13,6 +13,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { EmitFn } from "./agent-host";
+import { spawn, type RtSubprocess } from "../../runtime";
 
 const EDGE_CANDIDATES = [
 	"C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
@@ -20,7 +21,7 @@ const EDGE_CANDIDATES = [
 ];
 
 interface Engine {
-	proc: Process;
+	proc: RtSubprocess;
 	port: number;
 	ws: WebSocket | null;
 	browserWsUrl: string;
@@ -54,7 +55,7 @@ export class BrowserAutomation {
 		if (!exe) throw new Error("未找到系统 Edge(Chromium)可执行文件");
 		const profile = join(this.runtimeRoot, "edge-profiles", workspaceId.replace(/[^a-zA-Z0-9]/g, "_"));
 		mkdirSync(profile, { recursive: true });
-		const proc = Bun.spawn(
+		const proc = spawn(
 			[
 				exe,
 				"--headless",
@@ -125,7 +126,7 @@ export class BrowserAutomation {
 				// 连接断开:清空挂起
 				for (const [, p] of engine.pending) p.reject(new Error("CDP 连接关闭"));
 				engine.pending.clear();
-				engine.pageWsUrl = null;
+				engine.pageWsUrl= null;
 			};
 		});
 	}

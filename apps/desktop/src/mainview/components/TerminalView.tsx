@@ -1,5 +1,5 @@
 /**
- * 终端面板(@xterm/xterm 6 + 管道式 shell 后端)
+ * 终端面板(@xterm/xterm 6;后端 ConPTY 优先,管道回退)
  * terminal.output 事件经 window 事件总线 "jide-event" 分发(store 不缓存输出流,避免每字节渲染)。
  */
 
@@ -103,7 +103,8 @@ export function TerminalView() {
 		activeIdRef.current = id;
 		if (id && !booted) {
 			setBooted(true);
-			termRef.current?.writeln("\x1b[90m— JIDE 终端(管道式 shell;PTY 待运行时修复)—\x1b[0m");
+			const kind = s.terminals.find((t) => t.id === id)?.kind;
+			termRef.current?.writeln(`\x1b[90m— JIDE 终端(${kind === "pipe" ? "管道式 shell" : "ConPTY"})—\x1b[0m`);
 		}
 	}, [s.activeTerminalId]);
 

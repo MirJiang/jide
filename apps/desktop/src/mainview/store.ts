@@ -96,7 +96,7 @@ interface IDEStore {
 		modelLabel: string;
 	};
 
-	terminals: Array<{ id: string; workspaceId: string }>;
+	terminals: Array<{ id: string; workspaceId: string; kind?: "pty" | "pipe" }>;
 	/** 终端输出环形缓冲(每终端尾 50 行,供「问 agent」取上下文) */
 	terminalBuffers: Record<string, string[]>;
 	activeTerminalId: string | null;
@@ -518,7 +518,7 @@ export const useIDE = create<IDEStore>((set, get) => ({
 		const r = await client.request("terminal.create", { workspaceId: activeWorkspaceId, cwd: ws?.path });
 		if (r.ok) {
 			set((s) => ({
-				terminals: [...s.terminals, { id: r.terminalId, workspaceId: activeWorkspaceId! }],
+				terminals: [...s.terminals, { id: r.terminalId, workspaceId: activeWorkspaceId!, kind: r.kind }],
 				activeTerminalId: r.terminalId,
 				bottomVisible: true,
 				bottomTab: "terminal",

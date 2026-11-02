@@ -13,17 +13,18 @@ describe("ToolBridgeServer", () => {
 		bridge.stop();
 	});
 
-	test("未注册处理器:start 返回 null(不启动空服务)", () => {
-		expect(bridge.start()).toBeNull();
+	test("未注册处理器:start 返回 null(不启动空服务)", async () => {
+		expect(await bridge.start()).toBeNull();
 		expect(bridge.running).toBe(false);
 	});
 
-	test("启动:随机端口 + start 幂等", () => {
+	test("启动:随机端口 + start 幂等", async () => {
 		bridge.register("echo", async () => ({ content: [{ type: "text", text: "hi" }] }));
-		const ep1 = bridge.start();
+		const ep1 = await bridge.start();
 		expect(ep1).not.toBeNull();
 		expect(ep1!.url.startsWith("http://127.0.0.1:")).toBe(true);
-		const ep2 = bridge.start();
+		expect(ep1!.url.endsWith(":0")).toBe(false); // 真端口(Node listen 异步,onListen 后可用)
+		const ep2 = await bridge.start();
 		expect(ep2!.url).toBe(ep1!.url);
 		url = ep1!.url;
 	});

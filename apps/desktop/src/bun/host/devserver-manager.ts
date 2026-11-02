@@ -9,6 +9,7 @@
  */
 
 import type { EmitFn } from "./agent-host";
+import { spawn, tcpConnect, type RtSubprocess } from "../../runtime";
 
 export interface DevServerOptions {
 	command: string;
@@ -20,7 +21,7 @@ export interface DevServerOptions {
 
 interface DevServerEntry {
 	workspaceId: string;
-	proc: Process | null;
+	proc: RtSubprocess | null;
 	opts: DevServerOptions;
 	state: "stopped" | "starting" | "ready" | "crashed";
 	url: string | null;
@@ -109,7 +110,7 @@ export class DevServerManager {
 		try {
 			// command 形如 "bunx vite --port 5199" → 拆 argv(shlex 简版:按空格,支持引号)
 			const argv = opts.command.match(/(?:[^\s"]+|"[^"]*")+/g)?.map((s) => s.replace(/"/g, "")) ?? [];
-			const proc = Bun.spawn(argv, {
+			const proc = spawn(argv, {
 				cwd: opts.cwd,
 				stdin: "ignore",
 				stdout: "pipe",
@@ -190,7 +191,7 @@ export class DevServerManager {
 		};
 		const portOk = async (): Promise<boolean> => {
 			try {
-				const socket = await Bun.connect({
+				const socket = await tcpConnect({
 					hostname: "127.0.0.1",
 					port: entry.opts.port,
 					socket: {
@@ -237,7 +238,7 @@ export class DevServerManager {
 		entry.proc?.kill();
 		// Windows 进程树回收(dev server 派生 vite/esbuild 等)
 		if (process.platform === "win32" && entry.proc?.pid) {
-			Bun.spawn(["taskkill", "/F", "/T", "/PID", String(entry.proc.pid)], { stdout: "ignore", stderr: "ignore" });
+			spawn(["taskkill", "/F", "/T", "/PID", String(entry.proc.pid)], { stdout: "ignore", stderr: "ignore" });
 		}
 		this.servers.delete(workspaceId);
 		this.pushStatus({ ...entry, url: null });

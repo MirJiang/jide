@@ -86,22 +86,22 @@ describe("EventStore(事件落盘)", () => {
 /* ---------------- autostart ---------------- */
 
 describe("autostart(注册表 Run 键)", () => {
-	test("启用:reg add 指向 launcher;停用:reg delete;失败透传", () => {
+	test("启用:reg add 指向 app exe;停用:reg delete;失败透传", () => {
 		const cmds: string[][] = [];
 		const runner = (cmd: string[]) => {
 			cmds.push(cmd);
 			return { status: 0 };
 		};
-		const appDir = join("X:", "app", "Resources", "app");
-		const r1 = applyAutostart(true, appDir, runner);
+		const exe = join("X:", "app", "JIDE.exe");
+		const r1 = applyAutostart(true, exe, runner);
 		expect(r1.ok).toBe(true);
 		expect(cmds[0][0]).toBe("reg");
 		expect(cmds[0][1]).toBe("add");
-		expect(cmds[0].at(-2)).toBe('"X:\\app\\bin\\launcher.exe"');
-		const r2 = applyAutostart(false, appDir, runner);
+		expect(cmds[0].at(-2)).toBe('"X:\\app\\JIDE.exe"');
+		const r2 = applyAutostart(false, exe, runner);
 		expect(r2.ok).toBe(true);
 		expect(cmds[1]).toEqual(["reg", "delete", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", "/v", "JIDE", "/f"]);
-		const r3 = applyAutostart(true, appDir, () => ({ status: 1 }));
+		const r3 = applyAutostart(true, exe, () => ({ status: 1 }));
 		expect(r3.ok).toBe(false);
 	});
 });

@@ -39,7 +39,8 @@ export default function App() {
 				// 连接建立后按当前 seq 补拉一次,保证 journal 不漏
 				client.resync(useIDE.getState().lastSeq);
 				// 开发便利:JIDE_DEV_PROJECT 环境变量自动打开项目
-				const dev = process.env.JIDE_DEV_PROJECT;
+				// (Electron 沙箱渲染层无 process.env,经 Vite 的 VITE_ 前缀注入)
+				const dev = import.meta.env.VITE_JIDE_DEV_PROJECT as string | undefined;
 				if (dev) await useIDE.getState().openProject(dev);
 			})
 			.catch((err) => {

@@ -12,6 +12,7 @@
 
 import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { spawn } from "../../runtime";
 
 export namespace HttpProbe {
 	export interface Expect {
@@ -115,7 +116,7 @@ export class TestRunner {
 			return { ok: true, selected: 0, total: totalTests, durationMs: 0, results: [] };
 		}
 		const junitFile = join(cwd, ".jide-test-report.xml");
-		const proc = Bun.spawn(
+		const proc = spawn(
 			["bun", "test", ...testFiles, "--reporter=junit", `--reporter-outfile=${junitFile}`],
 			{
 				cwd,

@@ -39,9 +39,10 @@ import { OrchestratorManager } from "./host/orchestrator";
 import { RaceManager } from "./host/race-manager";
 import { TaskManager } from "./host/task-manager";
 import { EventStore } from "./host/event-store";
-import { applyAutostart, launcherPath } from "./host/autostart";
+import { applyAutostart } from "./host/autostart";
 import { mapFilesToTests as mapTests } from "./host/test-runner";
 import { HttpProbe, TestRunner } from "./host/test-runner";
+import { serve, spawn, write, type RtWs } from "../runtime";
 
 const RUNTIME_ROOT = process.env.JIDE_HOME ?? join(homedir(), ".jide");
 const DAEMON_DIR = join(RUNTIME_ROOT, "daemon");
@@ -436,7 +437,7 @@ devservers.onLogLine = (workspaceId, line) => logPump.onLine(workspaceId, line);
 // 唯一事实源:全部事件(宿主+服务)在此分配单调 seq;resync 回放以本 journal 为准;
 // EventStore 落盘供 daemon 重启回读近期上下文与调试轨迹。
 
-const clients = new Set<ServerWebSocket>();
+const clients = new Set<RtWs>();
 const journal = createEventJournal();
 const eventStore = new EventStore(DAEMON_DIR);
 for (const e of eventStore.load()) journal.append(e); // 重启回读(seq 重编号;跨重启 resync 由快照类 RPC 兜底)
@@ -659,14 +660,13 @@ const handlers = {
 	"settings.set": ({ patch }: any) => {
 		const before = settings.get().autostart;
 		const next = settings.set(patch);
-		// 开机自启副作用:仅当 launcher 真实存在(打包态);源码态 exe 为构建产物,跳过
+		// 开机自启副作用:app 主程序路径由壳经 env 注入;源码态无(跳过)
 		if (patch?.autostart !== undefined && next.autostart !== before) {
-			const appDir = import.meta.dir;
-			const lp = launcherPath(appDir);
-			if (!existsSync(lp)) {
-				log("autostart 跳过:未找到 launcher.exe(源码运行态)");
+			const appExe = process.env.JIDE_APP_EXE ?? "";
+			if (!appExe || !existsSync(appExe)) {
+				log("autostart 跳过:未设 JIDE_APP_EXE(源码运行态)");
 			} else {
-				const r = applyAutostart(next.autostart, appDir);
+				const r = applyAutostart(next.autostart, appExe);
 				if (!r.ok) log(`autostart 写入失败:${r.error ?? ""}`);
 			}
 		}
@@ -691,7 +691,7 @@ const handlers = {
 		try {
 			const target = dir.replace(/[\\/]+$/, "");
 			if (!/^https?:\/\/|git@|ssh:\/\//.test(url)) return { ok: false, error: "远程地址格式不合法" };
-			const proc = Bun.spawn(["git", "clone", "--progress", url, target], { stdout: "pipe", stderr: "pipe" });
+			const proc = spawn(["git", "clone", "--progress", url, target], { stdout: "pipe", stderr: "pipe" });
 			const err = await new Response(proc.stderr).text();
 			const code = await proc.exited;
 			if (code !== 0) {
@@ -846,7 +846,7 @@ const handlers = {
 			return { ok: false, error: "工作区不存在" };
 		}
 		const entry = terminals.create(workspaceId, cwd ?? undefined);
-		return { ok: true, terminalId: entry.id };
+		return { ok: true, terminalId: entry.id, kind: entry.pty ? "pty" : "pipe" };
 	},
 	"terminal.write": ({ terminalId, data }: any) => {
 		const r = terminals.write(terminalId, data);
@@ -911,7 +911,7 @@ const handlers = {
 	"git.openPullRequest": async ({ workspaceId }: any) => {
 		const url = await workspaces.remoteCompareUrl(workspaceId);
 		if (!url) return { ok: false, error: "无远端或当前在 main" };
-		Bun.spawn(["cmd", "/c", "start", "", url], { stdout: "ignore", stderr: "ignore" });
+		spawn(["cmd", "/c", "start", "", url], { stdout: "ignore", stderr: "ignore" });
 		return { ok: true, url };
 	},
 
@@ -1205,7 +1205,7 @@ const tokenBytes = new Uint8Array(32);
 crypto.getRandomValues(tokenBytes);
 const token = Array.from(tokenBytes, (b) => b.toString(16).padStart(2, "0")).join("");
 
-const server = Bun.serve({
+const server = await serve({
 	hostname: "127.0.0.1",
 	port: 0,
 	fetch(req, srv) {
@@ -1257,6 +1257,7 @@ const server = Bun.serve({
 	},
 });
 
+// await serve() 后端口恒为真值(Node listen 异步已由适配层吸收)
 writeFileSync(join(DAEMON_DIR, "port"), String(server.port));
 writeFileSync(join(DAEMON_DIR, "token"), token);
 writeFileSync(join(DAEMON_DIR, "pid"), String(process.pid));
@@ -1270,7 +1271,7 @@ if (process.env.JIDE_SMOKE_PLAN) {
 		try {
 			await workspaces.listWorkspaces(wid.split(":")[0]);
 			const wspath = workspaces.locate(wid).cwd;
-			if (wspath) await Bun.write(wspath + "/smoke-cart.ts", "export const priceCents = 2990;\n");
+			if (wspath) await write(wspath + "/smoke-cart.ts", "export const priceCents = 2990;\n");
 			const plan = plans.create(wid, "修复购物车总额浮点 bug", ["定位总额计算逻辑", "改为分单位整数计算", "回归验证", "浏览器验证展示", "沉淀检查项"]);
 			console.log(`[jide:smoke-plan] plan created ${plan.id} on ${wid}`);
 			const r1 = await plans.stepDone(plan.id, 0);

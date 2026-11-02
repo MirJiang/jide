@@ -20,6 +20,7 @@ export const DEFAULT_SETTINGS: JideSettings = {
 	orchestrator: true,
 	routerModel: "",
 	autostart: false,
+	keepRunningInTray: false,
 };
 
 /** 模型 key 数组规整:仅留合法 "<provider>/<modelId>",去重保序 */
@@ -74,6 +75,7 @@ export class SettingsManager {
 			orchestrator: p.orchestrator ?? base.orchestrator,
 			routerModel: normModelKey(p.routerModel ?? base.routerModel),
 			autostart: p.autostart ?? base.autostart,
+			keepRunningInTray: p.keepRunningInTray ?? base.keepRunningInTray,
 		};
 	}
 

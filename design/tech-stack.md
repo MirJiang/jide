@@ -1,6 +1,6 @@
 # 技术选型记录
 
-> 状态:全栈已定(2026-10-30):Electrobun 壳 + Bun 宿主(pi 进程内)+ React 19 + Vite + CodeMirror 6。变更历史见决策记录。
+> 状态:全栈已定(2026-11-02):**Electron 45 壳 + Electron/Node 宿主(daemon,经 ELECTRON_RUN_AS_NODE)+ React 19 + Vite 8 + CodeMirror 6**(DR-TS-05)。变更历史见决策记录。
 > 本文与业务设计文档互补:业务设计描述「做什么」,本文记录「用什么做」及弃选理由。
 > 决策原则:资源占用小、性能好(核心诉求);业务设计第 7 章的架构约束优先于框架偏好。
 
@@ -13,7 +13,28 @@
 | 壳 ↔ 宿主通信 | **类型化 contracts 包**(版本化协议,对齐 ThinkRail `@thinkrail/contracts`);UI ↔ 宿主走 Electrobun RPC / 本地 HTTP+WS | 原「wire 协议三原则」仍适用于协议设计 |
 | 终端 | **@xterm/xterm 6** + addons(fit/clipboard/unicode11)+ node-pty(ConPTY,Bun 主进程内) | node-pty 在 Bun 下的兼容性是 spike 项(§6) |
 
-## 2. 桌面壳:Electrobun ✅ 已定(2026-10-30 改选,DR-TS-04 覆盖 DR-TS-01)
+## 2. 桌面壳
+
+### 2.1 现行:Electron 45 ✅(2026-11-02,DR-TS-05)
+
+**结论**:Electron 45(Chromium 156 + Node 24 内置),`electron-builder` 打包(NSIS)。壳 = 窗口 + IPC 代理(`electron/main.ts`);daemon = 同一 electron 二进制以 `ELECTRON_RUN_AS_NODE=1` 执行 Node 化 bundle(`dist-daemon/jide-daemon.js`,经 `src/runtime.ts` 适配层,零 Bun API)——dev 与打包同构,不再携带 cottontail/bun 运行时(原 94MB 归零)。
+
+**改选动因**(Electrobun 实际踩坑):
+1. 僵尸 launcher.exe 多次漏杀,「改了没生效」被误判(AGENTS.md 铁律的直接成因);
+2. build/ 树被不可见句柄钉死,被迫换 buildFolder 绕行(2026-11-01);
+3. ConPTY 在 cottontail 下 socket 即断,终端降级管道式;
+4. Windows 支持最晚、上游为小团队项目,存在性风险不可控。
+其中 1/2 随换壳消失;3/4 由「daemon 并入 Electron 运行时」根治,顺带解决 94MB 体积。
+
+**取舍**:空闲内存预算由 <350MB 放宽至 ~450MB(换四痛点清零);「轻量」重定义为快、专注、无冗余。
+
+**风险与前置验证**(已全部实测通过):
+- `ELECTRON_RUN_AS_NODE` 跑 daemon:health/RPC/WS resync 全链 e2e ✓;
+- 进程树:tasklist 实证 daemon 进程为 electron 二进制,无独立 bun/cottontail ✓;
+- ConPTY:node-pty@1.1.0 在 Electron 45 下免重建可用,终端升 ConPTY(bun test 仍自动回退管道)✓;
+- electron-builder `--dir` 冒烟 ✓(Node 打包)。
+
+### 2.2 历史:Electrobun(2026-10-30 改选,DR-TS-04;已被 DR-TS-05 取代)
 
 **结论**:Electrobun 2.x(ThinkRail 同款,其实测依赖 `electrobun@2.0.5`),Windows 走 WebView2,macOS 用系统 WebKit。单一 TS 技术栈,**无 Rust/Zig 代码需要我们维护**。
 
@@ -96,4 +117,6 @@ Monaco 在 ThinkRail 中验证了 WebView 内重编辑器可行;我们因砍掉�
 - **DR-TS-01**(2026-10-30,已废弃)桌面壳 = Tauri 2。被 DR-TS-04 取代;用户明确彻底弃用(Rust 编译产物在本机遗留体积大),不留兜底。
 - **DR-TS-02**(2026-10-30)编辑器 = CodeMirror 6,强制可替换抽象,理由见 §3。
 - **DR-TS-03**(2026-10-30)前端框架 = React 19 + Zustand + Tailwind v4(决策输入「ThinkRail 前端栈」已确认),见 §4。
-- **DR-TS-04**(2026-10-30)桌面壳改选 **Electrobun**(ThinkRail 同款):pi 进程内、contracts 同构、全 TS 栈;UI 对齐为自研 jide-ui 包 + 设计令牌代码生成;构建保留 Vite,Bun 任包管理/测试。前置 spike#0 验证 Windows;**单向决策,Tauri 彻底移除、不留回退**。覆盖并废弃 DR-TS-01。
+- **DR-TS-04**(2026-10-30,已被 DR-TS-05 取代)桌面壳改选 **Electrobun**(ThinkRail 同款):pi 进程内、contracts 同构、全 TS 栈;UI 对齐为自研 jide-ui 包 + 设计令牌代码生成;构建保留 Vite,Bun 任包管理/测试。前置 spike#0 验证 Windows;**单向决策,Tauri 彻底移除、不留回退**。覆盖并废弃 DR-TS-01。
+- **DR-TS-05**(2026-11-02)桌面壳改选 **Electron 45**,用户拍板(全栈候选重开对比后)。Electrobun 实际踩坑(僵尸 launcher.exe / build 树句柄钉死 / ConPTY 断连 / 94MB cottontail)+ 上游小项目存在性风险 → 换壳;`ELECTRON_RUN_AS_NODE` 吸收 daemon 运行时(Node 化,`src/runtime.ts` 适配层),四痛点一次清零。依赖升级:vite 8 / tailwind 4.3 / react 19.3 / electron-builder 26。Vite/Tailwind/React/CM6 等前端栈不变。覆盖并废弃 DR-TS-04。
+- **DR-TS-06**(2026-11-02)**daemon 生命周期 = 跟随 app**(产品决策,用户拍板,推翻旧「关掉 app 照跑」):用户对「关不掉的进程」零容忍,且遗留 agent 会话会隐式消耗模型配额;退出时进程树级回收(taskkill /T,进程名核验防 pid 复用误杀),单实例锁防多壳抽走共享 daemon。**同日交付托盘 opt-in**:设置「关闭窗口驻留后台」开启后,关窗 = 隐藏到托盘(daemon 与自动化继续),真退出走托盘菜单;回收挂 `will-quit`(挂 `window-all-closed` 会在 app.quit() 序列中漏发,实测踩坑)。

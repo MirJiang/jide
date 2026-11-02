@@ -26,10 +26,11 @@ const emit = (e: HostEvent) => events.push(e);
 
 /* ---------- 测试用 dev server(Bun.serve) ---------- */
 let server: any;
-const PORT = 18765;
+// 绑临时端口(port 0)防硬编码端口被残留进程/并行跑毒害;真值 beforeAll 后回填
+let PORT = 18765;
 beforeAll(async () => {
 	server = Bun.serve({
-		port: PORT,
+		port: 0,
 		hostname: "127.0.0.1",
 		fetch: (req) => {
 			const url = new URL(req.url);
@@ -43,6 +44,7 @@ beforeAll(async () => {
 			return new Response("OK 首页");
 		},
 	});
+	PORT = server.port;
 });
 
 afterAll(async () => {

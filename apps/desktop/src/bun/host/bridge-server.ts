@@ -6,12 +6,14 @@
  * 本桥回环调宿主服务。宿主按 workspaceId 路由,格式化后的 AgentToolResult 形状返回。
  *
  * 传输与安全:
- *  - 仅绑定 127.0.0.1,Bun.serve({port:0}) 随机端口(实测宿主 runtime 支持,见 index.ts 预览页);
+ *  - 仅绑定 127.0.0.1,serve({port:0}) 随机端口(实测宿主 runtime 支持,见 index.ts 预览页);
  *  - 每实例随机 Bearer token,spawn 时经 env(JIDE_BRIDGE_URL/JIDE_BRIDGE_TOKEN)注入
  *    给自己拉起的 pi 子进程;无/错 token 一律 401;
  *  - 协议:POST /tool/<name>,body={workspaceId,params};处理器异常返回 200+isError 结果
  *    (agent 看到错误文本),协议层错误 400/401/404。
  */
+
+import { serve } from "../../runtime";
 
 export interface BridgeToolResult {
 	content: Array<{ type: "text"; text: string }>;
@@ -41,16 +43,17 @@ export class ToolBridgeServer {
 		return this;
 	}
 
-	/** 启动(幂等)并返回注入给 pi 扩展的环境信息;未注册任何处理器时返回 null */
-	start(): { url: string; token: string } | null {
+	/** 启动(幂等)并返回注入给 pi 扩展的环境信息;未注册任何处理器时返回 null。
+	 * 异步:Node listen 异步,await serve() 后端口恒为真值。 */
+	async start(): Promise<{ url: string; token: string } | null> {
 		if (this.handlers.size === 0) return null;
 		if (this.port !== null) return { url: `http://127.0.0.1:${this.port}`, token: this.token };
-		const server = Bun.serve({
+		const server = await serve({
 			hostname: "127.0.0.1",
 			port: 0,
 			fetch: (req) => this.handle(req),
 		});
-		this.port = server.port ?? 0;
+		this.port = server.port;
 		this.stopFn = () => server.stop(true);
 		return { url: `http://127.0.0.1:${this.port}`, token: this.token };
 	}

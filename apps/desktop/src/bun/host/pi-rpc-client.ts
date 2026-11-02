@@ -11,6 +11,7 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { spawn, sleep, spawnSync, type RtSubprocess } from "../../runtime";
 
 export interface PiRpcSpawnOptions {
 	nodePath?: string;
@@ -36,7 +37,7 @@ export interface PiRpcState {
 
 export type PiRpcEventHandler = (event: Record<string, any>) => void;
 
-/** 定位本机安装的 pi CLI(env 覆盖 → npm 全局 → bun 全局) */
+/** 定位本机安装的 pi CLI(env 覆盖 → npm 全局 → bun 全局 → pi-node 独立目录) */
 export function resolvePiCli(): { nodePath: string; cliPath: string } {
 	const nodePath = process.env.JIDE_PI_NODE || "node";
 	const candidates: string[] = [];
@@ -49,10 +50,19 @@ export function resolvePiCli(): { nodePath: string; cliPath: string } {
 	candidates.push(
 		join(homedir(), ".bun", "install", "global", "node_modules", "@earendil-works", "pi-coding-agent", "dist", "bundle", "cli.js"),
 	);
+	// pi-node 独立安装(<LOCALAPPDATA>\pi-node\current,自带 node 运行时)
+	const localApp = process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local");
+	const piNodeCli = join(localApp, "pi-node", "current", "node_modules", "@earendil-works", "pi-coding-agent", "dist", "bundle", "cli.js");
+	candidates.push(piNodeCli);
+	if (existsSync(piNodeCli)) {
+		const piNode = join(localApp, "pi-node", "current");
+		const nodeExe = join(piNode, process.platform === "win32" ? "node.exe" : "bin/node");
+		if (existsSync(nodeExe)) return { nodePath: nodeExe, cliPath: piNodeCli };
+	}
 	const hit = candidates.find((p) => existsSync(p));
 	if (!hit) {
 		throw new Error(
-			"未找到本机 pi CLI(已尝试 JIDE_PI_CLI、%APPDATA%\\npm、~/.bun 全局)。请先 npm install -g @earendil-works/pi-coding-agent@0.85.1,或设 JIDE_PI_CLI 指向其 dist/bundle/cli.js",
+			"未找到本机 pi CLI(已尝试 JIDE_PI_CLI、%APPDATA%\\npm、~/.bun 全局、pi-node 目录)。请先安装 @earendil-works/pi-coding-agent,或设 JIDE_PI_CLI 指向其 dist/bundle/cli.js",
 		);
 	}
 	return { nodePath, cliPath: hit };
@@ -65,7 +75,7 @@ interface Pending {
 }
 
 export class PiRpcClient {
-	private proc: Bun.Subprocess<"pipe", "pipe", "pipe">;
+	private proc: RtSubprocess;
 	private pending = new Map<string, Pending>();
 	private listeners = new Set<PiRpcEventHandler>();
 	private exitListeners = new Set<(code: number | null) => void>();
@@ -75,7 +85,7 @@ export class PiRpcClient {
 	private exitError: Error | null = null;
 	readonly timeoutMs: number;
 
-	private constructor(proc: Bun.Subprocess<"pipe", "pipe", "pipe">, timeoutMs: number) {
+	private constructor(proc: RtSubprocess, timeoutMs: number) {
 		this.proc = proc;
 		this.timeoutMs = timeoutMs;
 		void this.pumpStdout();
@@ -98,7 +108,7 @@ export class PiRpcClient {
 			...(opts.sessionDir ? ["--session-dir", opts.sessionDir] : []),
 			...(opts.args ?? []),
 		];
-		const proc = Bun.spawn([opts.nodePath || "node", ...args], {
+		const proc = spawn([opts.nodePath || "node", ...args], {
 			cwd: opts.cwd,
 			stdin: "pipe",
 			stdout: "pipe",
@@ -116,7 +126,7 @@ export class PiRpcClient {
 				return client;
 			} catch (err) {
 				lastErr = err as Error;
-				await Bun.sleep(400);
+				await sleep(400);
 			}
 		}
 		client.stop();
@@ -212,7 +222,7 @@ export class PiRpcClient {
 		this.stopped = true;
 		const pid = this.proc.pid;
 		if (process.platform === "win32") {
-			Bun.spawnSync(["taskkill", "/PID", String(pid), "/F", "/T"]);
+			spawnSync(["taskkill", "/PID", String(pid), "/F", "/T"]);
 		} else {
 			try {
 				this.proc.kill();

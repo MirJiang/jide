@@ -7,11 +7,12 @@
  */
 
 import type { EmitFn } from "./agent-host";
+import { spawn } from "../../runtime";
 
 const RESOURCE = "JIDE";
 
 function ps(script: string): Promise<{ code: number; out: string; err: string }> {
-	const proc = Bun.spawn(
+	const proc = spawn(
 		[
 			"powershell.exe",
 			"-NoProfile",

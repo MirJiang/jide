@@ -51,6 +51,8 @@ export interface JideSettings {
 	routerModel: string;
 	/** 开机自启(Windows 注册表 Run 键;dev 态指向 build2 launcher) */
 	autostart: boolean;
+	/** 关闭窗口驻留后台(DR-TS-06 opt-in):点 X 隐藏到托盘,daemon 与自动化继续跑;默认关(退出即全退) */
+	keepRunningInTray: boolean;
 }
 
 /** pi 模型目录条目(get_available_models 投影;key = "<provider>/<modelId>") */
@@ -526,7 +528,7 @@ export interface HostRequestShapes {
 	"terminal.create": {
 		params: { workspaceId: string; cwd?: string };
 		response:
-			| { ok: true; terminalId: string }
+			| { ok: true; terminalId: string; kind?: "pty" | "pipe" }
 			| { ok: false; error: string };
 	};
 	"terminal.write": {
@@ -1062,6 +1064,12 @@ export type HostEvent =
 
 export type HostEventType = HostEvent["type"];
 
+/** 逐分支分发 Omit(直接 Omit<联合,K> 会坍缩为公共字段,误伤变体特有字段) */
+type DistributiveOmit<T, K extends keyof never> = T extends unknown ? Omit<T, K> : never;
+
+/** 事件输入(未分配 seq):emit/append 侧用;逐分支分发,保留变体特有字段 */
+export type HostEventInput = DistributiveOmit<HostEvent, "seq">;
+
 /** 事件日志(journal):宿主持有,UI 崩溃重连后按 lastSeq 增量补发 = 可回放 */
 export interface EventJournal {
 	/** 目前已分配的最大 seq */
@@ -1069,7 +1077,7 @@ export interface EventJournal {
 	/** 取 (afterSeq, ...] 区间的事件 */
 	since(afterSeq: number): HostEvent[];
 	/** 追加事件并分配 seq */
-	append(event: Omit<HostEvent, "seq">): HostEvent;
+	append(event: HostEventInput): HostEvent;
 }
 
 /** 创建进程内事件日志(环形缓冲,保留最近 maxEntries 条) */

@@ -43,6 +43,15 @@ describe("设置管理", () => {
 		expect(reloaded.devserver.port).toBe(5199);
 	});
 
+	test("驻留后台(DR-TS-06 opt-in):默认关;开启持久化往返", () => {
+		const dir = join(root, "b2");
+		const sm = new SettingsManager(dir);
+		expect(sm.get().keepRunningInTray).toBe(false);
+		sm.set({ keepRunningInTray: true });
+		const reloaded = new SettingsManager(dir).get();
+		expect(reloaded.keepRunningInTray).toBe(true);
+	});
+
 	test("损坏 settings.json:静默回落默认值;历史遗留未知键被忽略", () => {
 		const dir = join(root, "c");
 		mkdirSync(dir, { recursive: true });

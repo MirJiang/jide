@@ -8,6 +8,7 @@ import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type { AgentEngine, EngineEvent, EngineMessage } from "./agent-engine";
+import { sleep } from "../../runtime";
 
 /** 演示脚本:文本流 → 工具调用 → 总结,与原 faux 版形态一致 */
 const DEMO_STEPS: Array<{ kind: "text" | "tool"; text: string; toolName?: string }> = [
@@ -83,7 +84,7 @@ export class DemoEngine implements AgentEngine {
 			this.emit({ type: "message_end", message: msg });
 			this.append({ role: "assistant", text: step.text });
 			this.cached.push({ role: "assistant", text: step.text });
-			await Bun.sleep(10);
+			await sleep(10);
 		}
 		this.emit({ type: "agent_settled" });
 	}

@@ -286,6 +286,16 @@ function ModelPage({ onNavigate }: { onNavigate: (c: Category) => void }) {
 					onChange={(v) => void s.saveSettings({ autostart: v === "1" })}
 				/>
 			</Row>
+			<Row label="关闭窗口驻留后台" desc="点 X 隐藏到托盘,agent 与定时自动化继续跑;托盘图标可恢复或真正退出">
+				<Select
+					value={st.keepRunningInTray ? "1" : "0"}
+					options={[
+						["1", "开启"],
+						["0", "关闭"],
+					]}
+					onChange={(v) => void s.saveSettings({ keepRunningInTray: v === "1" })}
+				/>
+			</Row>
 
 			<div className="mb-2 mt-4 flex items-center justify-between">
 				<span className="text-[10px] font-semibold tracking-wider" style={{ color: "var(--fg-faint)" }}>

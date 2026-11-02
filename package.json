@@ -2,22 +2,20 @@
 	"name": "jide",
 	"private": true,
 	"version": "0.1.0",
-	"description": "JIDE — 自测闭环优先的轻量 Agentic IDE(Electrobun + React + pi 内核)",
+	"description": "JIDE — 自测闭环优先的轻量 Agentic IDE(Electron + React + pi 内核)",
+	"trustedDependencies": [
+		"electron"
+	],
 	"workspaces": [
 		"packages/*",
 		"apps/*"
 	],
 	"scripts": {
+		"dev": "cd apps/desktop && bun run dev",
+		"build": "cd apps/desktop && bun run build",
 		"test": "bun test packages/contracts packages/jide-ui apps/desktop",
 		"typecheck": "tsc -p packages/contracts && tsc -p apps/desktop",
-		"desktop:prepare": "cd apps/desktop && DASH_RELEASE_OFFLINE=1 hutch electrobun prepare",
-		"desktop:view": "cd apps/desktop && bunx vite build",
-		"desktop:dev": "cd apps/desktop && DASH_RELEASE_OFFLINE=1 hutch electrobun dev",
-		"desktop:hmr": "cd apps/desktop && bun scripts/dev-hmr.mjs",
-		"desktop:build": "cd apps/desktop && bunx vite build && bun run daemon:build && DASH_RELEASE_OFFLINE=1 hutch electrobun build",
-		"tokens:generate": "bun packages/jide-ui/scripts/generate-tokens.mjs",
-		"desktop": "bun run desktop:view && bun run desktop:dev",
-		"daemon:build": "cd apps/desktop && bun build src/bun/daemon.ts --target=bun --outfile dist-daemon/jide-daemon.js"
+		"tokens:generate": "bun packages/jide-ui/scripts/generate-tokens.mjs"
 	},
 	"devDependencies": {
 		"typescript": "~5.9.3"

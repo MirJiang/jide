@@ -10,6 +10,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { EmitFn } from "./agent-host";
 import type { WorkspaceManager } from "./workspace-manager";
+import { spawn } from "../../runtime";
 
 export interface ReviewItem {
 	id: string;
@@ -27,7 +28,7 @@ export interface ReviewItem {
 }
 
 async function git(cwd: string, args: string[]) {
-	const proc = Bun.spawn(["git", "-C", cwd, ...args], {
+	const proc = spawn(["git", "-C", cwd, ...args], {
 		stdout: "pipe",
 		stderr: "pipe",
 		env: { ...process.env, LC_ALL: "C" },

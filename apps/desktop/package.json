@@ -2,6 +2,16 @@
 	"name": "@jide/desktop",
 	"version": "0.1.0",
 	"private": true,
+	"description": "JIDE — 自测闭环优先的轻量 Agentic IDE",
+	"author": "JIDE contributors",
+	"main": "dist-electron/main.js",
+	"scripts": {
+		"dev": "bun scripts/dev.mjs",
+		"build": "bunx vite build && bun run daemon:build && bun run shell:build && electron-builder --win",
+		"package:dir": "bunx vite build && bun run daemon:build && bun run shell:build && electron-builder --win --dir",
+		"daemon:build": "bun build src/bun/daemon.ts --target=node --external:node-pty --outfile dist-daemon/jide-daemon.js",
+		"shell:build": "bun build electron/main.ts --target=node --format=cjs --packages=external --outfile dist-electron/main.js && bun build electron/preload.ts --target=node --format=cjs --packages=external --outfile dist-electron/preload.js"
+	},
 	"dependencies": {
 		"@codemirror/commands": "^6.11.1",
 		"@codemirror/lang-css": "^6.3.1",
@@ -31,10 +41,17 @@
 	"devDependencies": {
 		"@tailwindcss/vite": "^4.3.3",
 		"@types/bun": "latest",
+		"@types/node": "^24",
 		"@types/react": "^19.2.0",
 		"@types/react-dom": "^19.2.0",
-		"@vitejs/plugin-react": "^5.0.0",
+		"@types/ws": "^8.18.2",
+		"@vitejs/plugin-react": "^6.2.1",
+		"electron": "^45.2.1",
+		"electron-builder": "^26.18.0",
+		"node-pty": "^1.1.0",
 		"tailwindcss": "^4.3.3",
-		"vite": "^7.3.7"
+		"typebox": "^1.4.3",
+		"vite": "^8.3.5",
+		"ws": "^8.22.1"
 	}
 }

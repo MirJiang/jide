@@ -19,6 +19,7 @@ import {
 	createEventJournal,
 	type EventJournal,
 	type HostEvent,
+	type HostEventInput,
 	type SessionStatus,
 } from "@jide/contracts";
 import type { AgentEngine, EngineEvent } from "./agent-engine";
@@ -124,7 +125,7 @@ export class AgentHost {
 		return this.journal.since(afterSeq);
 	}
 
-	private push(event: Omit<HostEvent, "seq">) {
+	private push(event: HostEventInput) {
 		const withSeq = this.journal.append(event);
 		this.emit(withSeq);
 	}
@@ -173,9 +174,9 @@ export class AgentHost {
 	}
 
 	/** 工具桥 env:桥未绑定/未启动返回空;供 pi 进程内 jide-tools 扩展回环调用 */
-	private bridgeEnv(workspaceId?: string): Record<string, string> {
+	private async bridgeEnv(workspaceId?: string): Promise<Record<string, string>> {
 		if (!this.bridge) return {};
-		const ep = this.bridge.start();
+		const ep = await this.bridge.start();
 		if (!ep) return {};
 		return {
 			JIDE_BRIDGE_URL: ep.url,
@@ -316,7 +317,7 @@ export class AgentHost {
 			env: {
 				...(memoryFile ? { JIDE_MEMORY_FILE: memoryFile } : {}),
 				...(opts.orchestrator ? { JIDE_ORCH: "1" } : {}),
-				...this.bridgeEnv(opts.workspaceId),
+				...(await this.bridgeEnv(opts.workspaceId)),
 			},
 			sessionFile: opts.sessionFile,
 			onLog: (level, message) => this.log(level, message),

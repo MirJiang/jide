@@ -25,20 +25,24 @@ jobs:
       - name: Typecheck
         run: bunx tsc -p packages/contracts && bunx tsc -p apps/desktop --noEmit || true
 
-  # Electrobun 打包冒烟仅在 Windows 跑(hutch 工具链;spike#0 已在本机验证)
+  # Electron 打包冒烟仅在 Windows 跑(DR-TS-05;daemon/ext 随 extraResources)
   package-smoke:
-    name: electrobun build smoke (windows)
+    name: electron build smoke (windows)
     runs-on: windows-latest
     if: github.event_name == 'push'
     needs: test
+    env:
+      ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install
-      - name: Electrobun prepare + build
+      - name: Build renderer + daemon + shell
         working-directory: apps/desktop
         run: |
-          npx electrobun@2.0.5 init --help 2>$null || true
-          hutch electrobun prepare
           bunx vite build
-          hutch electrobun build
+          bun run daemon:build
+          bun run shell:build
+      - name: electron-builder (dir)
+        working-directory: apps/desktop
+        run: bunx electron-builder --win --dir

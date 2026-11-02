@@ -13,18 +13,19 @@
 - **编排(P2)**:当前对话即 Router —— `spawn_worker`(独立会话+隔离工作区,并发池)、投机执行(静默修复,验证全绿才提交进评审队列)、日志两级过滤(规则粗筛 → 模型精判)、Watchdog(超时/无效循环)
 - **竞赛(P3)**:同一任务书一拖 N(逐路可配模型),隔离 worktree 并行执行,自动评分(测试+检查项),人工选优合入主线
 - **自动化**:定时(cron/每日/工作日)与事件触发(测试失败/检查项失败)→ 挂机跑 → 评审队列收口
-- **常驻 daemon**:宿主服务独立进程,关掉 app,agent 与定时任务照跑
+- **daemon 随 app 退出自动回收**(进程树级 taskkill);设置「关闭窗口驻留后台」可切换为托盘常驻(agent 与定时自动化继续跑,托盘可恢复/退出)
 - **模型无关**:模型目录来自你自己的 pi 配置,对话内即时切换,常用列表/默认模型/Router 模型可配
 
 ## 架构
 
 ```
-┌─ JIDE 主进程(薄壳:窗口 + RPC 代理)────────────────┐
-│   UI(React 19 + Zustand + Tailwind v4)              │
+┌─ JIDE 主进程(Electron 薄壳:窗口 + IPC 代理)─────────┐
+│   UI(React 19 + Zustand + Tailwind v4)               │
 └─────────────┬────────────────────────────────────────┘
-              │ electrobun RPC / 127.0.0.1 HTTP+WS(token)
+              │ Electron IPC(preload 桥)/ 127.0.0.1 HTTP+WS(token)
 ┌─────────────▼────────────────────────────────────────┐
-│  JIDE daemon(常驻宿主,app 关了照跑)                 │
+│  JIDE daemon(宿主服务;随 app 退出自动回收)          │
+│  = 同一 electron 二进制以 ELECTRON_RUN_AS_NODE 运行    │
 │    AgentHost ── 每会话 spawn ──► pi --mode rpc 子进程 │
 │    ToolBridgeServer ◄── HTTP 回环 ── jide-* 扩展      │
 │    (10 个领域工具:dev_server/test_run/browser/…)     │
@@ -32,14 +33,13 @@
 └──────────────────────────────────────────────────────┘
 ```
 
-协议契约在 [`packages/contracts`](packages/contracts):类型化、版本协商(app.hello)、seq 事件日志可回放。
+协议契约在 [`packages/contracts`](packages/contracts):类型化、版本协商(app.hello)、seq 事件日志可回放。daemon 代码不依赖 Bun API(经 `src/runtime.ts` 适配层),同一份源码可跑 Node(生产)与 Bun(bun test,开发)。
 
 ## 环境要求
 
-- Windows 10/11(macOS 待验证)
-- [Bun](https://bun.sh) ≥ 1.3
-- [Electrobun](https://www.npmjs.com/package/electrobun) 工具链:`npm i -g electrobun`(首次运行引导安装 hutch 与平台工具链)
-- [pi CLI](https://www.npmjs.com/package/@earendil-works/pi-coding-agent):`npm i -g @earendil-works/pi-coding-agent`,并在 pi 内完成模型认证(写入 `~/.pi`)
+- Windows 10/11(macOS 理论可跑,未验证)
+- [Bun](https://bun.sh) ≥ 1.3(仅开发/测试用;运行时零外部依赖,daemon 由应用自带的 Electron 二进制执行)
+- [pi CLI](https://www.npmjs.com/package/@earendil-works/pi-coding-agent):`npm i -g @earendil-works/pi-coding-agent` 或 pi-node 独立安装,并在 pi 内完成模型认证(写入 `~/.pi`)
 
 ## 快速开始
 
@@ -47,7 +47,7 @@
 git clone https://github.com/MirJiang/jide.git
 cd jide && bun install
 
-bun run desktop        # 构建前端 + 启动桌面壳(daemon 首启自动拉起)
+bun run dev            # vite dev + 桌面壳(daemon 首启自动拉起)
 ```
 
 启动后:标题栏「项目」→ 打开一个 git 仓库 → 信任 → 开始对话。让 agent 改完代码,它会自己 `test_run` → `checks` → 走评审队列等你通过。
@@ -57,16 +57,15 @@ bun run desktop        # 构建前端 + 启动桌面壳(daemon 首启自动拉�
 ```bash
 bun test               # 全量单测(无网络)
 bun run typecheck      # contracts 类型检查
-bun run desktop:hmr    # 前端 HMR 开发流
+bun run dev            # 前端 HMR 开发流(vite + electron)
 ```
 
-构建细节:
+构建与打包:
 
 ```bash
 cd apps/desktop
-hutch electrobun prepare     # 投影 devkit(首次必跑)
-bunx vite build              # 构建前端到 dist/
-hutch electrobun dev         # 启动桌面壳(或 build 出包)
+bun run build          # vite 前端 + daemon bundle(Node) + electron 壳 + NSIS 安装包
+bun run package:dir    # 仅出 win-unpacked 目录(冒烟)
 ```
 
 E2E 脚本(`apps/desktop/scripts/`):`e2e-daemon.ts`(宿主全链)/ `e2e-bridge.ts`(工具注册实证)/ `e2e-pi-rpc.ts`、`e2e-orchestrator-live.ts`(真实模型全链,消耗少量配额)。
@@ -74,15 +73,14 @@ E2E 脚本(`apps/desktop/scripts/`):`e2e-daemon.ts`(宿主全链)/ `e2e-bridge.t
 ## 文档
 
 - [业务设计](design/business-design.md) —— 工作区/测试域/记忆域/评审队列全量规格与验收故事
-- [技术选型](design/tech-stack.md) —— Electrobun + Bun + React 19 决策与追溯记录
+- [技术选型](design/tech-stack.md) —— Electron + React 19 决策与追溯记录(DR-TS-05 起)
 - [路线图](design/roadmap-v2.md) —— Router 化:P0~P4(编排/竞赛/任务域)
 - [交互原型](prototype/index.html) —— 冻结的交互基线
 
 ## 已知边界
 
-- 终端为管道式 shell(ConPTY 在 Bun/cottontail 下 socket 即断;接口已留 PTY 升级位)
-- Windows 优先;macOS 理论可跑(系统 WebView),未验证
-- 出包含 cottontail 运行时约 94MB(应用资源约 11.5MB)
+- 终端为 ConPTY(DR-TS-05 起,daemon 运行于 Electron/Node;Bun 测试环境下自动回退管道式)
+- Windows 优先;macOS 理论可跑(Electron 跨平台),未验证
 
 ## License
 

@@ -1,5 +1,5 @@
 {
-	"extends": "./.hutch/devkit/tsconfig.json",
+	"extends": "../../tsconfig.base.json",
 	"compilerOptions": {
 		"target": "ES2022",
 		"lib": ["ES2022", "DOM", "DOM.Iterable"],
@@ -7,7 +7,7 @@
 		"strict": true,
 		"skipLibCheck": true,
 		"noEmit": true,
-		"types": ["bun"]
+		"types": ["bun", "node", "vite/client"]
 	},
-	"include": ["src", "../packages/contracts/src"]
+	"include": ["src", "electron", "../packages/contracts/src"]
 }

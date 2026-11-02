@@ -1,0 +1,28 @@
+# JIDE 打包配置(electron-builder,DR-TS-05)
+# 产物:release/win-unpacked(NESIS 见 win.target);daemon 与 pi 扩展走 extraResources
+# (asar 内的 JS 无法被 ELECTRON_RUN_AS_NODE 子进程读取,故 daemon 必须在资源目录)
+appId: dev.jide.desktop
+productName: JIDE
+directories:
+  output: release
+  buildResources: assets
+asar: true
+files:
+  - dist/**
+  - dist-electron/**
+  - assets/**
+  - package.json
+extraResources:
+  - { from: dist-daemon, to: daemon }
+  - { from: src/bun/host/extensions, to: jide-extensions }
+  # node-pty 原生模块:daemon bundle external 化,运行时自 resources/daemon/node_modules 解析
+  - { from: node_modules/node-pty, to: daemon/node_modules/node-pty }
+win:
+  icon: assets/neon-j.ico
+  target:
+    - target: nsis
+      arch: [x64]
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  artifactName: JIDE-Setup-${version}.exe
