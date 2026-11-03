@@ -9,6 +9,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseModelKey, type JideSettings } from "@jide/contracts";
 
+/** 部分更新补丁:devserver 子对象允许深 partial(运行时逐字段 ?? 兜底) */
+export type JideSettingsPatch = Partial<Omit<JideSettings, "devserver">> & { devserver?: Partial<JideSettings["devserver"]> };
+
 export const DEFAULT_SETTINGS: JideSettings = {
 	theme: "system",
 	editorFontSize: 12.5,
@@ -57,7 +60,7 @@ export class SettingsManager {
 	}
 
 	/** 显式挑键合并(devserver 子对象同理);磁盘/历史版本遗留的未知键一律丢弃 */
-	private merge(base: JideSettings, patch: Partial<JideSettings>): JideSettings {
+	private merge(base: JideSettings, patch: JideSettingsPatch): JideSettings {
 		const p = patch ?? {};
 		return {
 			theme: p.theme ?? base.theme,
@@ -87,7 +90,7 @@ export class SettingsManager {
 		};
 	}
 
-	set(patch: Partial<JideSettings>): JideSettings {
+	set(patch: JideSettingsPatch): JideSettings {
 		this.settings = this.merge(this.settings, patch);
 		writeFileSync(this.storePath, JSON.stringify(this.settings, null, "\t"));
 		return this.get();

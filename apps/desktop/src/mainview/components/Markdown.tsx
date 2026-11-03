@@ -49,7 +49,7 @@ function CodeBlock({ className, children, ...rest }: any) {
 				const shiki = await getShiki();
 				const lang = /language-(\w+)/.exec(className ?? "")?.[1] ?? "ts";
 				const out = await shiki.codeToHtml(code, {
-					lang: SHIKI_LANGS.includes(lang) ? lang : "ts",
+					lang: (SHIKI_LANGS as readonly string[]).includes(lang) ? (lang as (typeof SHIKI_LANGS)[number]) : "ts",
 					theme: "github-dark-default",
 				});
 				if (alive) setHtml(out);

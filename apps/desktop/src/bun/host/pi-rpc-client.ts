@@ -145,7 +145,7 @@ export class PiRpcClient {
 	}
 
 	// ── 命令 ────────────────────────────────────────────────────────────
-	private request(cmd: Record<string, unknown>, timeoutMs = this.timeoutMs): Promise<any> {
+	request(cmd: Record<string, unknown>, timeoutMs = this.timeoutMs): Promise<any> {
 		if (this.exitError) return Promise.reject(this.exitError);
 		const id = `r${this.nextId++}`;
 		return new Promise((resolve, reject) => {

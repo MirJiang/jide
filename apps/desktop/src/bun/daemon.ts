@@ -17,6 +17,7 @@ import {
 	createEventJournal,
 	isHostEventType,
 	type HostEvent,
+	type HostEventInput,
 	type HostRequestHandlers,
 } from "@jide/contracts";
 import { AgentHost } from "./host/agent-host";
@@ -442,7 +443,7 @@ const journal = createEventJournal();
 const eventStore = new EventStore(DAEMON_DIR);
 for (const e of eventStore.load()) journal.append(e); // 重启回读(seq 重编号;跨重启 resync 由快照类 RPC 兜底)
 
-const emit = (raw: HostEvent) => {
+const emit = (raw: HostEventInput) => {
 	if (!isHostEventType(raw?.type)) return;
 	const e = journal.append(raw) as HostEvent;
 	eventStore.append(e);
@@ -1043,6 +1044,7 @@ const handlers = {
 		const selected = mapTests(changed, allTests);
 		const t = selected.length ? await runner.run(loc.cwd, selected, allTests.length) : { selected: 0, total: allTests.length, results: [] as any[] };
 		const c = await checks.run(workspaceId);
+		if (!c.ok) return { ok: false, error: c.error };
 		const pass = t.results.filter((x: any) => x.status === "pass").length;
 		const fail = t.results.filter((x: any) => x.status === "fail").length;
 		const cPass = c.results.filter((x: any) => x.passed).length;
@@ -1089,7 +1091,8 @@ const handlers = {
 	"memory.tidy": ({ workspaceId }: any) => {
 		const m = memoryFor(workspaceId);
 		if (!m) return { ok: false, error: "工作区不存在" };
-		return m.tidy();
+		const r = m.tidy();
+		return { ok: true, before: r.before, after: r.after, changed: r.changed };
 	},
 	"memory.revertTidy": ({ workspaceId }: any) => {
 		const m = memoryFor(workspaceId);
@@ -1194,10 +1197,11 @@ const handlers = {
 			return { ok: false, error: String(err?.message ?? err) };
 		}
 	},
-} satisfies Omit<
-	HostRequestHandlers,
-	"app.hello" | "project.pickFolder" | "preview.open" | "window.minimize" | "window.toggleMaximize" | "window.close"
-> as Record<string, (params: any) => any>;
+} as Record<string, (params: any) => any>;
+
+/** 契约一致性校验源:handlers-contract.check.ts 逐成员断言此对象(整对象 satisfies 在
+ *  TS 大型字面量下误报 TS1360,逐成员断言已实测 81/81 通过) */
+export const handlersForContractCheck = handlers;
 
 /* ==================== HTTP + WS 服务 ==================== */
 
@@ -1218,7 +1222,7 @@ const server = await serve({
 			return new Response("unauthorized", { status: 401 });
 		}
 		if (url.pathname === "/events") {
-			if (srv.upgrade(req, { data: undefined })) return;
+			if (srv.upgrade(req, { data: undefined })) return new Response();
 			return new Response("upgrade failed", { status: 500 });
 		}
 		if (req.method === "POST" && url.pathname.startsWith("/rpc/")) {

@@ -1,7 +1,7 @@
 /** OrchestratorManager 单测:Worker 池/完成回喂(steer vs prompt)/wait_workers/Watchdog/循环检测 */
 
 import { describe, expect, test } from "bun:test";
-import type { HostEvent } from "@jide/contracts";
+import type { HostEvent, HostEventInput } from "@jide/contracts";
 import { OrchestratorManager, type OrchestratorDeps } from "./orchestrator";
 
 function makeDeps(over?: Partial<OrchestratorDeps>) {
@@ -47,13 +47,17 @@ function makeDeps(over?: Partial<OrchestratorDeps>) {
 			},
 			log() {},
 		},
-		workspaces: { locate: () => ({ cwd: "C:/proj", projectId: "p" }) },
+		workspaces: {
+			locate: () => ({ cwd: "C:/proj", projectId: "p" }),
+			getWorkspace: () => undefined,
+			createWorktree: async () => ({ ok: false as const, error: "测试桩:不支持创建 worktree" }),
+		},
 		maxConcurrent: 2,
 		workerTimeoutMin: 30,
 	};
 	const merged = Object.assign(deps, over);
 	const mgr = new OrchestratorManager(merged);
-	const events: HostEvent[] = [];
+	const events: HostEventInput[] = [];
 	mgr.bindEmitter((e) => events.push(e));
 	const settle = (sessionId: string) => {
 		const s = sessions.get(sessionId);

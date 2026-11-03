@@ -43,8 +43,8 @@ function loadMode(): "auto" | "confirm" {
 	}
 }
 
-export default function (pi) {
-	pi.on("tool_call", async (event, ctx) => {
+export default function (pi: any) {
+	pi.on("tool_call", async (event: any, ctx: any) => {
 		if (event.tool !== "bash" && event.toolName !== "bash") return;
 		const cmd = String(event.args?.command ?? event.args?.cmd ?? "");
 		if (!cmd) return;

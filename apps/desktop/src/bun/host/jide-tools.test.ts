@@ -17,7 +17,7 @@ async function loadTools(env: Record<string, string>, cacheKey = "main") {
 }
 
 /** 临时替换全局 fetch */
-function stubFetch(fn: typeof fetch): () => void {
+function stubFetch(fn: (input: any, init?: any) => Promise<Response>): () => void {
 	const orig = globalThis.fetch;
 	globalThis.fetch = fn as any;
 	return () => (globalThis.fetch = orig);

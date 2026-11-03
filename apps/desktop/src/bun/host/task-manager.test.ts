@@ -4,12 +4,12 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { HostEvent } from "@jide/contracts";
+import type { HostEvent, HostEventInput } from "@jide/contracts";
 import { TaskManager } from "./task-manager";
 
 function makeMgr() {
 	const root = mkdtempSync(join(tmpdir(), "jide-task-test-"));
-	const events: HostEvent[] = [];
+	const events: HostEventInput[] = [];
 	const workers = new Map<string, { status: string; verified?: string }>();
 	const finalized: string[] = [];
 	const raceState = { status: "running" };

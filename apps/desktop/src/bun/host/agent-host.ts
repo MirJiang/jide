@@ -65,7 +65,7 @@ export interface CreateSessionOptions {
 	agentsMd?: string | null;
 }
 
-export type EmitFn = (event: HostEvent) => void;
+export type EmitFn = (event: HostEventInput) => void;
 
 const HOST_NAME = "jide-host/0.1.0";
 

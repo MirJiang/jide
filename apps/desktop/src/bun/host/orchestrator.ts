@@ -50,7 +50,7 @@ export interface OrchestratorDeps {
 	workspaces: {
 		locate(workspaceId: string): { cwd: string | null; projectId: string | null };
 		getWorkspace(projectId: string, workspaceId: string): { branch?: string } | undefined;
-		createWorktree(repoId: string, name: string): Promise<{ ok: true; workspaceId: string; path: string } | { ok: false; error: string }>;
+		createWorktree(repoId: string, name: string): Promise<{ ok: true; workspaceId: string; path: string; branch?: string } | { ok: false; error: string }>;
 	};
 	/** 投机执行:验证与提交进评审队列(与 AutomationManager 同一套语义) */
 	verify?: {
@@ -58,7 +58,7 @@ export interface OrchestratorDeps {
 		gitStatus(workspaceId: string): Promise<{ ok: true; changes: Array<{ path: string }> } | { ok: false; error: string }>;
 		mapTests(changed: string[], all: string[]): string[];
 		runTests(cwd: string, files: string[], total: number): Promise<{ ok: boolean; selected: number; total: number; results: Array<{ status: string }> }>;
-		runChecks(workspaceId: string): Promise<{ ok: boolean; results: Array<{ passed: boolean; title: string }> }>;
+		runChecks(workspaceId: string): Promise<{ ok: true; results: Array<{ passed: boolean; title: string }> } | { ok: false; error: string }>;
 		enqueueChecks(workspaceId: string, passed: number, total: number): void;
 		commitAll(workspaceId: string, message: string): Promise<{ ok: true; sha: string } | { ok: false; error: string }>;
 		enqueueCommit(workspaceId: string, branch: string, sha: string, message: string): void;
@@ -271,7 +271,7 @@ export class OrchestratorManager {
 		}
 	}
 
-	private async execWorker(rec: WorkerRecord, objective: string, modelKey?: string, timeoutMin: number, speculative?: boolean) {
+	private async execWorker(rec: WorkerRecord, objective: string, modelKey?: string, timeoutMin = 8, speculative?: boolean) {
 		this.running.set(rec.id, rec.sessionId);
 		rec.status = "running";
 		this.notifyWorkerUpdate(rec);

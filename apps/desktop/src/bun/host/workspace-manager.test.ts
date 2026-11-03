@@ -7,12 +7,12 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { HostEvent } from "@jide/contracts";
+import type { HostEvent, HostEventInput } from "@jide/contracts";
 import { WorkspaceManager } from "./workspace-manager";
 import { FileService } from "./file-service";
 import { PlanManager } from "./plan-manager";
 
-const events: HostEvent[] = [];
+const events: HostEventInput[] = [];
 const root = mkdtempSync(join(tmpdir(), "jide-ws-test-"));
 const projectDir = join(root, "shop");
 let projectId = "";

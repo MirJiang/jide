@@ -104,13 +104,9 @@ export function DiffView({ path }: { path: string }) {
 					}),
 				],
 			},
-			foldUnchanged: { minSize: 4, margin: 3 } as any,
-			collapseUnchangedRegions: { minSize: 4, margin: 3 } as any,
 			revertControls: "a.b" as any, // 中缝方向应用:b→a(»)/a→b(«)
 			gutter: true,
 			highlightChanges: true,
-			syntaxHighlightDeletions: true,
-			syntaxHighlightInsertions: true,
 		});
 		viewRef.current = view;
 		return () => {

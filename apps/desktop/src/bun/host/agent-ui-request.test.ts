@@ -8,14 +8,14 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { HostEvent } from "@jide/contracts";
+import type { HostEvent, HostEventInput } from "@jide/contracts";
 import { AgentHost } from "./agent-host";
 import { PiSession } from "./pi-session";
 
 describe("extension_ui_request → UI 链路", () => {
 	test("AgentHost 翻译:extension_ui_request → agent.ui.request(dialog 全字段)", () => {
 		const host = new AgentHost(join(mkdtempSync(join(tmpdir(), "jide-ui-req-")), "rt"));
-		const events: HostEvent[] = [];
+		const events: HostEventInput[] = [];
 		host.bindEmitter((e) => events.push(e));
 
 		let handler: ((e: any) => void) | null = null;

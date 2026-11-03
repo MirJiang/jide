@@ -161,7 +161,7 @@ export class DevServerManager {
 
 	private pumpLogs(entry: DevServerEntry, stream: ReadableStream<Uint8Array>) {
 		void (async () => {
-			const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
+			const reader = stream.pipeThrough(new TextDecoderStream() as unknown as ReadableWritablePair<string, Uint8Array>).getReader();
 			try {
 				for (;;) {
 					const { done, value } = await reader.read();
@@ -191,15 +191,7 @@ export class DevServerManager {
 		};
 		const portOk = async (): Promise<boolean> => {
 			try {
-				const socket = await tcpConnect({
-					hostname: "127.0.0.1",
-					port: entry.opts.port,
-					socket: {
-						data() {},
-						close() {},
-						error() {},
-					},
-				});
+				const socket = await tcpConnect({ hostname: "127.0.0.1", port: entry.opts.port });
 				socket.end();
 				return true;
 			} catch {

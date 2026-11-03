@@ -105,7 +105,7 @@ function makeDeps(opts: { scores?: number[]; workers?: number } = {}) {
 		w.summary = `summary-${id}`;
 		void (mgr as any).onWorkerUpdate({ id, status, summary: w.summary });
 	};
-	return { mgr, deps, workers, workerCbs, calls, removed, finishWorker, root: deps.runtimeRoot };
+	return { mgr, deps, workers, workerCbs, calls, removed, finishWorker, root: deps.runtimeRoot, orchestrator: deps.orchestrator };
 }
 
 describe("RaceManager(P3 竞赛)", () => {

@@ -164,6 +164,7 @@ const triggerDesc = (t: Automation["trigger"]): string =>
 				: `事件 · ${t.type === "test-failed" ? "测试失败" : "检查项失败"}`;
 
 const runStatusLabel: Record<AutomationRun["status"], string> = {
+	aborted: "已中止",
 	queued: "排队",
 	running: "运行中",
 	ok: "完成",
@@ -171,6 +172,7 @@ const runStatusLabel: Record<AutomationRun["status"], string> = {
 	timeout: "超时",
 };
 const runStatusColor: Record<AutomationRun["status"], string> = {
+	aborted: "var(--fg-faint)",
 	queued: "var(--fg-faint)",
 	running: "var(--acc)",
 	ok: "var(--green)",

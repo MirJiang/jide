@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Automation, AutomationRun, HostEvent } from "@jide/contracts";
+import type { Automation, AutomationRun, HostEvent, HostEventInput } from "@jide/contracts";
 import { AutomationManager, cronMatch, parseCron, scheduleDue, type AutomationDeps } from "./automation-manager";
 
 const d = (y: number, mo: number, day: number, h: number, mi: number, weekday?: number) => {
@@ -112,7 +112,7 @@ function makeDeps(over?: Partial<AutomationDeps>) {
 	};
 	const merged = Object.assign(deps, over);
 	const mgr = new AutomationManager(merged);
-	const events: HostEvent[] = [];
+	const events: HostEventInput[] = [];
 	mgr.bindEmitter((e) => events.push(e));
 	const settle = (sessionId: string) => {
 		const s = sessions.get(sessionId);

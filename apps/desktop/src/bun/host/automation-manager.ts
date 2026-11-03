@@ -110,7 +110,7 @@ export interface AutomationDeps {
 		gitStatus(workspaceId: string): Promise<{ ok: true; changes: Array<{ path: string }> } | { ok: false; error: string }>;
 		mapTests(changed: string[], all: string[]): string[];
 		runTests(cwd: string, files: string[], total: number): Promise<{ ok: boolean; selected: number; total: number; results: Array<{ status: string }> }>;
-		runChecks(workspaceId: string): Promise<{ ok: boolean; results: Array<{ passed: boolean; title: string }> }>;
+		runChecks(workspaceId: string): Promise<{ ok: true; results: Array<{ passed: boolean; title: string }> } | { ok: false; error: string }>;
 		enqueueChecks(workspaceId: string, passed: number, total: number): void;
 	};
 	/** Router 分派(P3):常驻 Router 会话拆解 → Worker 池;缺省无 = dispatch "router" 回退直执 */
@@ -369,7 +369,7 @@ export class AutomationManager {
 			if (!handled) await this.execDirect(a, rec, workspaceId, workspacePath);
 
 			// 自动验证(结果失败不改 run 状态——run 完成,结论看字段;入评审队列人审)
-			if (a.autoVerify && rec.status === "ok") {
+			if (a.autoVerify && (rec.status as string) === "ok") {
 				const loc = this.deps.workspaces.locate(workspaceId);
 				if (loc.cwd) {
 					const all = this.deps.verify.scanTests(loc.cwd);

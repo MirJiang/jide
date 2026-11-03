@@ -40,7 +40,7 @@ describe("ModelCatalog(pi 模型目录)", () => {
 
 	test("list:去重 + 按 provider/id 排序;坏条目过滤", async () => {
 		const calls = { n: 0 };
-		const cat = new ModelCatalog({ spawner: () => fakeClient(RAW, calls) });
+		const cat = new ModelCatalog({ spawner: async () => fakeClient(RAW, calls) });
 		const models = await cat.list();
 		expect(models.map((m) => m.key)).toEqual(["anthropic/claude-x", "zhipu/dup", "zhipu/glm-4.6", "zhipu/glm-5"]);
 		expect(calls.n).toBe(1);
@@ -67,7 +67,7 @@ describe("ModelCatalog(pi 模型目录)", () => {
 
 	test("TTL 过期后重拉", async () => {
 		const calls = { n: 0 };
-		const cat = new ModelCatalog({ spawner: () => fakeClient(RAW, calls), cacheTtlMs: 10 });
+		const cat = new ModelCatalog({ spawner: async () => fakeClient(RAW, calls), cacheTtlMs: 10 });
 		await cat.list();
 		await new Promise((r) => setTimeout(r, 30));
 		await cat.list();

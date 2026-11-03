@@ -12,6 +12,7 @@
  *    超出降级为 host.log;缓冲上限 60 行,超出丢最旧。
  */
 
+import type { HostEventInput } from "@jide/contracts";
 import type { AgentHost } from "./agent-host";
 
 const ERROR_RE = /\b(error|failed|exception|fatal)\b|EADDRINUSE|ENOENT|EACCES|Segmentation/i;
@@ -25,18 +26,13 @@ export interface DevLogPumpOptions {
 	judge?: (workspaceId: string, tail: string) => Promise<boolean | null>;
 }
 
-interface HostEventLike {
-	type: string;
-	sessionId?: string;
-}
-
 export class DevLogPump {
 	private buf = new Map<string, string[]>();
 	private timers = new Map<string, ReturnType<typeof setTimeout>>();
 	private lastPushAt = new Map<string, number>();
 	private pushCount = new Map<string, number>();
-	private emit: (e: HostEventLike) => void = () => {};
-	private readonly opts: Required<DevLogPumpOptions>;
+	private emit: (e: HostEventInput) => void = () => {};
+	private readonly opts: Required<Omit<DevLogPumpOptions, "judge">> & Pick<DevLogPumpOptions, "judge">;
 
 	constructor(
 		private host: {
@@ -58,11 +54,11 @@ export class DevLogPump {
 	}
 
 	/** 订阅宿主事件流(agent.settled 重置轮次计数) */
-	bindEmitter(emit: (e: HostEventLike) => void) {
+	bindEmitter(emit: (e: HostEventInput) => void) {
 		this.emit = emit;
 	}
 
-	handleHostEvent(e: HostEventLike) {
+	handleHostEvent(e: HostEventInput) {
 		if (e.type === "agent.settled" && e.sessionId) {
 			const entry = this.host.getSession(e.sessionId);
 			if (entry?.workspaceId) this.pushCount.delete(entry.workspaceId);

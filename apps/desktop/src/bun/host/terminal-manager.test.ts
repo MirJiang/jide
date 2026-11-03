@@ -6,7 +6,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { HostEvent } from "@jide/contracts";
+import type { HostEvent, HostEventInput } from "@jide/contracts";
 import { TerminalManager } from "./terminal-manager";
 
 const dir = mkdtempSync(join(tmpdir(), "jide-term-test-"));
@@ -17,7 +17,7 @@ afterAll(() => {
 
 describe("终端(管道式 shell)", () => {
 	test("执行命令并收到输出事件;退出事件送达", async () => {
-		const events: HostEvent[] = [];
+		const events: HostEventInput[] = [];
 		const tm = new TerminalManager();
 		tm.bindEmitter((e) => events.push(e));
 

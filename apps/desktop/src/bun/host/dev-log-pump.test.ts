@@ -9,7 +9,7 @@ function fakeHost(steered: number[] = [], busy = true) {
 	]);
 	return {
 		logs: [] as Array<{ level: string; message: string }>,
-		log(level: any, message: string) {
+		log(level: "info" | "warn" | "error", message: string) {
 			this.logs.push({ level, message });
 		},
 		async steerBusyForWorkspace(workspaceId: string, text: string) {
@@ -23,6 +23,9 @@ function fakeHost(steered: number[] = [], busy = true) {
 		},
 		hasSessionForWorkspace(workspaceId: string) {
 			return workspaceId === "p:w1";
+		},
+		hasBusySessionForWorkspace(workspaceId: string) {
+			return workspaceId === "p:w1" && sessions.has("s-busy");
 		},
 	};
 }

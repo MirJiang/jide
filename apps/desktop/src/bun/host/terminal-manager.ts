@@ -196,7 +196,7 @@ export class TerminalManager {
 
 		const pump = async (stream: ReadableStream<Uint8Array>, isErr: boolean) => {
 			const decoder = new TextDecoderStream();
-			const text = stream.pipeThrough(decoder);
+			const text = stream.pipeThrough(decoder as unknown as ReadableWritablePair<string, Uint8Array>);
 			const reader = text.getReader();
 			try {
 				for (;;) {

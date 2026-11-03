@@ -9,19 +9,10 @@
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import type { CheckAssertion } from "@jide/contracts";
 import type { EmitFn } from "./agent-host";
 import { HttpProbe } from "./test-runner";
 import type { BrowserAutomation } from "./browser-automation";
-
-export interface CheckAssertion {
-	type: "http" | "browser" | "manual";
-	url?: string;
-	expectStatus?: number;
-	contains?: string;
-	clickSelector?: string;
-	expectContains?: string;
-	note?: string;
-}
 
 export interface CheckItem {
 	id: string;
@@ -120,6 +111,14 @@ export class ChecksManager {
 
 	/** 执行(ids 为空 = 全部);http 走探针,browser 走自动化引擎,manual 恒 pending */
 	async run(workspaceId: string, ids?: string[]) {
+		try {
+			return await this.runUnsafe(workspaceId, ids);
+		} catch (err: any) {
+			return { ok: false as const, error: String(err?.message ?? err) };
+		}
+	}
+
+	private async runUnsafe(workspaceId: string, ids?: string[]) {
 		const all = this.list(workspaceId);
 		const targets = ids?.length ? all.filter((c) => ids.includes(c.id)) : all;
 		const results: Array<{ id: string; title: string; passed: boolean; detail?: string; evidence?: string }> = [];

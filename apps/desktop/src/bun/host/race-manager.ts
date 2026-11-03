@@ -37,7 +37,7 @@ export interface RaceDeps {
 		gitStatus(workspaceId: string): Promise<{ ok: true; changes: Array<{ path: string }> } | { ok: false; error: string }>;
 		mapTests(changed: string[], all: string[]): string[];
 		runTests(cwd: string, files: string[], total: number): Promise<{ ok: boolean; selected: number; total: number; results: Array<{ status: string }> }>;
-		runChecks(workspaceId: string): Promise<{ ok: boolean; results: Array<{ passed: boolean; title: string }> }>;
+		runChecks(workspaceId: string): Promise<{ ok: true; results: Array<{ passed: boolean; title: string }> } | { ok: false; error: string }>;
 	};
 	runtimeRoot: string;
 }

@@ -8,10 +8,10 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { HostEvent } from "@jide/contracts";
+import type { HostEvent, HostEventInput } from "@jide/contracts";
 import { AgentHost } from "./agent-host";
 
-const events: HostEvent[] = [];
+const events: HostEventInput[] = [];
 const host = new AgentHost();
 host.bindEmitter((e) => events.push(e));
 
@@ -27,8 +27,9 @@ const of = (type: HostEvent["type"]) => events.filter((e) => e.type === type);
 const seqMonotonic = () => {
 	let last = 0;
 	for (const e of events) {
-		if (e.seq <= last) return false;
-		last = e.seq;
+		const seq = (e as HostEvent).seq;
+		if (seq <= last) return false;
+		last = seq;
 	}
 	return true;
 };
@@ -47,7 +48,7 @@ describe("M1 全链路:faux provider", () => {
 	test("prompt → 流式 delta → assistant 消息定稿 → settled", async () => {
 		await host.prompt(sessionId, "你好,演示一下");
 		const deltas = of("agent.text-delta");
-		const finals = of("agent.message").filter((e) => e.role === "assistant");
+		const finals = of("agent.message").filter((e) => (e as { role?: string }).role === "assistant");
 		expect(deltas.length).toBeGreaterThan(0);
 		expect(finals.length).toBeGreaterThanOrEqual(1);
 		const settled = of("agent.settled");

@@ -260,7 +260,8 @@ function Composer({
 		setAttachErr("");
 		const picked = await s.client?.request("project.pickFile", {});
 		if (!picked?.ok || !picked.file) return;
-		if (attachments.some((a) => a.path === picked.file)) return;
+		const filePath = picked.file;
+		if (attachments.some((a) => a.path === filePath)) return;
 		const r = await s.client?.request("fs.readAbsolute", { path: picked.file });
 		if (!r?.ok) {
 			setAttachErr(r?.error ?? "读取失败");
@@ -269,7 +270,7 @@ function Composer({
 		// 二进制探测:前 4KB 含 NUL 视为二进制(仅路径引用)
 		const head = r.content.slice(0, 4096);
 		const binary = head.includes("\u0000");
-		setAttachments((a) => [...a, { path: picked.file, content: binary ? null : r.content, size: r.size, truncated: r.truncated }]);
+		setAttachments((a) => [...a, { path: filePath, content: binary ? null : r.content, size: r.size, truncated: r.truncated }]);
 	};
 
 	const doSend = () => {
@@ -375,7 +376,7 @@ function Composer({
 										onClick={async () => {
 											setPermission(v as "auto" | "confirm");
 											setPermissionOpen(false);
-											if (sessId) await s.client?.request("session.setPermissionMode", { sessionId: sessId, mode: v });
+											if (sessId) await s.client?.request("session.setPermissionMode", { sessionId: sessId, mode: v as "auto" | "confirm" });
 										}}
 									>
 										<span className="text-[11.5px]" style={{ color: permission === v ? "var(--acc)" : "var(--fg)" }}>{lbl}</span>

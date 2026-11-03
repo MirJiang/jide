@@ -156,7 +156,22 @@ export class BrowserAutomation {
 		throw new Error("需要先 navigate(建立页面会话)");
 	}
 
+	/** 统一异常 → {ok:false,error}:调用方(checks 循环/桥)按结果形态分支,
+	 * 失败不应以异常形态打断调用方(实测隐患:checks 循环会被 CDP 异常打断) */
+	private async guard<T extends { ok: boolean }>(p: Promise<T>): Promise<Exclude<T, { ok: false }> | { ok: false; error: string }> {
+		try {
+			// ok:false 业务分支运行时原样透传(字段自洽);类型上并入统一失败形态
+			return (await p) as Exclude<T, { ok: false }>;
+		} catch (err: any) {
+			return { ok: false as const, error: String(err?.message ?? err) };
+		}
+	}
+
 	async navigate(workspaceId: string, url: string) {
+		return this.guard(this.navigateUnsafe(workspaceId, url));
+	}
+
+	private async navigateUnsafe(workspaceId: string, url: string) {
 		const engine = await this.ensureEngine(workspaceId);
 		// 打开新标签页(browser WS 上 createTarget),再 attach + Page.navigate(经 flattening session)
 		const { targetId } = await this.send(engine, "Target.createTarget", { url: "about:blank" });
@@ -165,7 +180,7 @@ export class BrowserAutomation {
 		(engine as any).currentTarget = targetId;
 		// session 路由的 send
 		const sendSession = (method: string, params: Record<string, unknown> = {}) =>
-			new Promise((resolve, reject) => {
+			new Promise<any>((resolve, reject) => {
 				const ws = engine.ws!;
 				const id = ++engine.msgId;
 				engine.pending.set(id, { resolve, reject });
@@ -219,6 +234,10 @@ export class BrowserAutomation {
 	}
 
 	async click(workspaceId: string, selector: string) {
+		return this.guard(this.clickUnsafe(workspaceId, selector));
+	}
+
+	private async clickUnsafe(workspaceId: string, selector: string) {
 		const clicked = await this.eval(
 			workspaceId,
 			`(() => {
@@ -271,6 +290,10 @@ export class BrowserAutomation {
 
 	/** scroll(§4C):按像素滚动页面或元素 */
 	async scroll(workspaceId: string, x: number, y: number, selector?: string) {
+		return this.guard(this.scrollUnsafe(workspaceId, x, y, selector));
+	}
+
+	private async scrollUnsafe(workspaceId: string, x: number, y: number, selector?: string) {
 		await this.eval(
 			workspaceId,
 			`(() => {
@@ -333,6 +356,10 @@ export class BrowserAutomation {
 
 	/** 录屏回放(§4C):间隔截图收集帧 + 生成可回放 HTML */
 	async record(workspaceId: string, ms: number, intervalMs = 500) {
+		return this.guard(this.recordUnsafe(workspaceId, ms, intervalMs));
+	}
+
+	private async recordUnsafe(workspaceId: string, ms: number, intervalMs = 500) {
 		const engine = this.engines.get(workspaceId);
 		if (!engine || !(engine as any).sendSession) return { ok: false as const, error: "尚未导航" };
 		const dir = join(this.runtimeRoot, "browser-recordings", workspaceId.replace(/[^a-zA-Z0-9]/g, "_") + "-" + Date.now());
@@ -357,12 +384,20 @@ export class BrowserAutomation {
 	}
 
 	async textContent(workspaceId: string) {
+		return this.guard(this.textContentUnsafe(workspaceId));
+	}
+
+	private async textContentUnsafe(workspaceId: string) {
 		const text = await this.eval(workspaceId, "document.body.innerText");
 		return { ok: true as const, text: String(text ?? "") };
 	}
 
 	/** 截图:base64 回传 + 落盘(runtime/browser-shots/,多模态证据链) */
 	async capture(workspaceId: string, kind: "shot" = "shot") {
+		return this.guard(this.captureUnsafe(workspaceId, kind));
+	}
+
+	private async captureUnsafe(workspaceId: string, kind: "shot" = "shot") {
 		const engine = this.engines.get(workspaceId);
 		if (!engine || !(engine as any).sendSession) return { ok: false as const, error: "尚未导航" };
 		const shotDir = join(this.runtimeRoot, "browser-shots");

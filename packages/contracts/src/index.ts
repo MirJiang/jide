@@ -223,6 +223,17 @@ export interface Race {
 /* UI → 宿主:请求(全部枚举)                                        */
 /* ------------------------------------------------------------------ */
 
+/** 检查项断言(4E:http 探测 / browser 动作 / manual 人工) */
+export interface CheckAssertion {
+	type: "http" | "browser" | "manual";
+	url?: string;
+	expectStatus?: number;
+	contains?: string;
+	clickSelector?: string;
+	expectContains?: string;
+	note?: string;
+}
+
 export interface HostRequestShapes {
 	/** 版本协商与宿主信息。连接后 UI 必须首先调用。 */
 	"app.hello": {
@@ -692,10 +703,7 @@ export interface HostRequestShapes {
 						title: string;
 						kind: "asset" | "temp";
 						/** 断言类型:http / browser / manual */
-						assertion:
-							| { type: "http"; url: string; expectStatus?: number; contains?: string }
-							| { type: "browser"; url: string; clickSelector?: string; expectContains?: string }
-							| { type: "manual"; note?: string };
+												assertion: CheckAssertion;
 						/** diff 命中自动带上的路径模式 */
 						appliesTo?: string[];
 						lastResult?: { passed: boolean; at: string; evidence?: string };
@@ -887,7 +895,7 @@ export interface HostRequestShapes {
 	"memory.tidy": {
 		params: { workspaceId: string };
 		response:
-			| { ok: true; before: number; after: number; changed: Array<{ scope: string; file: string; removed: string[] }> }
+			| { ok: true; before: number; after: number; changed: Array<{ scope: string; file: string; removed: string[]; mergedInto?: string }> }
 			| { ok: false; error: string };
 	};
 	/** 整理回退(.bak) */
@@ -907,7 +915,7 @@ export interface HostRequestShapes {
 	"session.askWithContext": {
 		params: {
 			workspaceId: string;
-			source: "terminal" | "test" | "preview";
+			source: "terminal" | "test" | "preview" | "review";
 			contextText: string;
 			question?: string;
 		};

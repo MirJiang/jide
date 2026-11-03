@@ -26,7 +26,6 @@ export interface TaskManagerDeps {
 		objective: string;
 		status: string;
 		entries: Array<{ workerId: string; status: string; score?: number; verified?: string; summary?: string }>;
-		workspaceId: string;
 	} | undefined;
 	/** 任务终态回调(P3.4 任务经历写入) */
 	onFinalize?(task: OrchestrationTask): void;

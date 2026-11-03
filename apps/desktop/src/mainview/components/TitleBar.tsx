@@ -209,7 +209,7 @@ export function TitleBar() {
 								</button>
 							))}
 							<div style={{ borderTop: "1px solid var(--line)", margin: "4px 6px" }} />
-							<div className="px-2.5 py-1.5" disabled={!canOp}>
+							<div className="px-2.5 py-1.5">
 								<div className="mb-1 text-[11px]" style={{ color: "var(--fg-faint)" }}>
 									新建隔离工作区(分支 jide/&lt;名称&gt;{stacked ? ",基于当前工作区分支(stacked)" : ",基于当前 HEAD"})
 								</div>

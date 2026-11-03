@@ -161,7 +161,7 @@ describe("P3.4 任务经历(长期记忆,第 4 写入通道)", () => {
 	test("注入:经历独立成层(不计入项目层,防双重计入);召回可命中经历", () => {
 		const m = new MemoryManager(root);
 		// 项目层常规记忆 + 经历(上一测试已写入 experience.md)
-		m.adopt(m.suggest("project", "conventions.md", ["命令一律 pnpm"], "会话沉淀"));
+		m.adopt(m.suggest("project", "conventions.md", ["命令一律 pnpm"], "会话沉淀").id);
 		const inj = m.inject();
 		expect(inj.text).toContain("# 任务经历");
 		expect(inj.text).toContain("# 项目记忆(命令/约定/坑)");

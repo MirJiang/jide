@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { HostEvent } from "@jide/contracts";
+import type { HostEvent, HostEventInput } from "@jide/contracts";
 import { DevServerManager } from "./devserver-manager";
 import { HttpProbe, mapFilesToTests } from "./test-runner";
 import { BrowserAutomation } from "./browser-automation";
@@ -21,8 +21,8 @@ import { WorkspaceManager } from "./workspace-manager";
 import { ChecksManager } from "./checks-manager";
 
 const root = mkdtempSync(join(tmpdir(), "jide-m3-test-"));
-const events: HostEvent[] = [];
-const emit = (e: HostEvent) => events.push(e);
+const events: HostEventInput[] = [];
+const emit = (e: HostEventInput) => events.push(e);
 
 /* ---------- 测试用 dev server(Bun.serve) ---------- */
 let server: any;
@@ -110,7 +110,7 @@ describe("4A dev server:就绪探测三模式", () => {
 
 	test("崩溃感知:进程退出 → crashed 事件", async () => {
 		const dm = new DevServerManager();
-		const evts: HostEvent[] = [];
+		const evts: HostEventInput[] = [];
 		dm.bindEmitter((e) => evts.push(e));
 		// 故意选一个立刻退出的命令 + log 探测永不命中 → 超时;但进程退出事件应到
 		const r = await dm.ensure("ws-crash", {
@@ -256,7 +256,7 @@ describe("W6 评审队列:门禁合并", () => {
 		const rq = new ReviewQueue(ws, join(root, "runtime"));
 		rq.bindEmitter(emit);
 		rq.enqueueCommit(created.workspaceId, created.branch, commit.ok ? commit.sha : "", "Agent · 计划步骤 1:修复");
-		const items = rq.list(opened.project.id);
+		const items = rq.list(opened.project!.id);
 		expect(items).toHaveLength(1);
 		expect(items[0].state).toBe("pending");
 

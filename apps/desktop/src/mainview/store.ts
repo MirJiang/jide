@@ -172,7 +172,7 @@ interface IDEStore {
 
 	/** 外部投递待办(终端/测试/评审 →「问 agent」):ChatPanel 消费后清空,填入输入框待用户确认发送 */
 	chatPrefill: string | null;
-	askAgent(source: string, contextText: string, question: string): Promise<void>;
+	askAgent(source: "terminal" | "test" | "preview" | "review", contextText: string, question: string): Promise<void>;
 	runTier(tier: "agent" | "human" | "cdp"): Promise<void>;
 	refreshReview(): Promise<void>;
 
@@ -771,7 +771,7 @@ export const useIDE = create<IDEStore>((set, get) => ({
 		// 用户按 Enter 才真正发送(人在环:不意外起轮、不烧配额;可编辑后发送)。
 		// 旧行为(伪造一条未发送的用户消息)已废弃 —— 那只是 UI 假象,agent 根本没收到。
 		const { client, activeWorkspaceId } = get();
-		const label = { test: "测试失败", terminal: "终端输出", review: "评审项" }[source] ?? source;
+		const label = { test: "测试失败", terminal: "终端输出", review: "评审项", preview: "预览" }[source] ?? source;
 		set({ activeTab: "chat" });
 		if (client && activeWorkspaceId) {
 			await client.request("session.askWithContext", { workspaceId: activeWorkspaceId, source, contextText, question });
@@ -819,6 +819,21 @@ export const useIDE = create<IDEStore>((set, get) => ({
 		if (r.ok) {
 			set({ reviewPending: r.items.filter((x: any) => x.state === "pending").length });
 		}
+	},
+
+	/** W6/变更面板:打开某文件的 diff 页签(DiffView 按 tab path 走 git.fileDiff) */
+	openDiff: async (path: string) => {
+		set((st) => {
+			const exists = st.tabs.some((t) => t.kind === "diff" && t.path === path);
+			const tabs = exists ? st.tabs : [...st.tabs, { kind: "diff" as const, title: path.split(/[\/]/).pop() ?? path, path }];
+			return { tabs, activeTab: `diff:${path}` };
+		});
+	},
+	diffTabKey: (path: string) => `diff:${path}`,
+	/** 人侧预览:壳侧独立窗口(与 agent 共用同一 dev server 实例) */
+	openPreview: (url: string) => {
+		const { client } = get();
+		void client?.request("preview.open", { url });
 	},
 
 	handleEvent(event) {

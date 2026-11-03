@@ -20,8 +20,8 @@ function loadMemory() {
 	}
 }
 
-export default function (pi) {
-	pi.on("before_agent_start", async (event) => {
+export default function (pi: any) {
+	pi.on("before_agent_start", async (event: any) => {
 		const memory = loadMemory();
 		if (!memory?.trim()) return;
 		return {
